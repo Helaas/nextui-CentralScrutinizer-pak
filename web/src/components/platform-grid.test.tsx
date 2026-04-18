@@ -1,0 +1,79 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+
+import { PlatformGrid } from "./platform-grid";
+
+describe("PlatformGrid", () => {
+  it("renders grouped platform cards", () => {
+    render(
+      <PlatformGrid
+        groups={[
+          {
+            name: "Nintendo",
+            platforms: [
+              {
+                tag: "GBA",
+                name: "Game Boy Advance",
+                group: "Nintendo",
+                icon: "GBA",
+                isCustom: false,
+                romPath: "Roms/Game Boy Advance (GBA)",
+                savePath: "Saves/GBA",
+                biosPath: "Bios/GBA",
+                counts: { roms: 3, saves: 1, bios: 0, overlays: 0, cheats: 0 },
+                bios: { required: 1, present: 0, satisfied: false },
+              },
+            ],
+          },
+        ]}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Nintendo")).toBeTruthy();
+    expect(screen.getByText("Game Boy Advance")).toBeTruthy();
+    expect(screen.getByText(/3 ROMs/)).toBeTruthy();
+  });
+
+  it("disambiguates duplicate platform names with their tags", () => {
+    render(
+      <PlatformGrid
+        groups={[
+          {
+            name: "Nintendo",
+            platforms: [
+              {
+                tag: "GBA",
+                name: "Game Boy Advance",
+                group: "Nintendo",
+                icon: "GBA",
+                isCustom: false,
+                romPath: "Roms/Game Boy Advance (GBA)",
+                savePath: "Saves/GBA",
+                biosPath: "Bios/GBA",
+                counts: { roms: 3, saves: 1, bios: 0, overlays: 0, cheats: 0 },
+                bios: { required: 1, present: 0, satisfied: false },
+              },
+              {
+                tag: "MGBA",
+                name: "Game Boy Advance",
+                group: "Nintendo",
+                icon: "MGBA",
+                isCustom: false,
+                romPath: "Roms/Game Boy Advance (MGBA)",
+                savePath: "Saves/MGBA",
+                biosPath: "Bios/MGBA",
+                counts: { roms: 4, saves: 2, bios: 0, overlays: 0, cheats: 0 },
+                bios: { required: 1, present: 0, satisfied: false },
+              },
+            ],
+          },
+        ]}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Game Boy Advance (GBA)")).toBeTruthy();
+    expect(screen.getByText("Game Boy Advance (MGBA)")).toBeTruthy();
+  });
+});

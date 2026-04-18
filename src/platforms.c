@@ -1,0 +1,651 @@
+#include "cs_platforms.h"
+
+#include <dirent.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+
+#define CS_DISCOVERED_PLATFORM_MAX 128
+
+static const cs_platform_info g_platforms[] = {
+    {.tag = "PUAE",
+     .name = "Amiga",
+     .group = "Computer",
+     .icon = "AMIGA",
+     .primary_code = "PUAE",
+     .rom_directory = "Amiga (PUAE)"},
+    {.tag = "CPC",
+     .name = "Amstrad CPC",
+     .group = "Computer",
+     .icon = "CPC",
+     .primary_code = "CPC",
+     .rom_directory = "Amstrad CPC (CPC)"},
+    {.tag = "C128",
+     .name = "Commodore 128",
+     .group = "Computer",
+     .icon = "C128",
+     .primary_code = "C128",
+     .rom_directory = "Commodore 128 (C128)"},
+    {.tag = "C64",
+     .name = "Commodore 64",
+     .group = "Computer",
+     .icon = "C64",
+     .primary_code = "C64",
+     .rom_directory = "Commodore 64 (C64)"},
+    {.tag = "PET",
+     .name = "Commodore PET",
+     .group = "Computer",
+     .icon = "PET",
+     .primary_code = "PET",
+     .rom_directory = "Commodore PET (PET)"},
+    {.tag = "PLUS4",
+     .name = "Commodore Plus4",
+     .group = "Computer",
+     .icon = "PLUS4",
+     .primary_code = "PLUS4",
+     .rom_directory = "Commodore Plus4 (PLUS4)"},
+    {.tag = "VIC",
+     .name = "Commodore VIC20",
+     .group = "Computer",
+     .icon = "VIC20",
+     .primary_code = "VIC",
+     .rom_directory = "Commodore VIC20 (VIC)"},
+    {.tag = "MSX",
+     .name = "Microsoft MSX",
+     .group = "Computer",
+     .icon = "MSX",
+     .primary_code = "MSX",
+     .rom_directory = "Microsoft MSX (MSX)"},
+    {.tag = "PRBOOM",
+     .name = "Doom",
+     .group = "Computer",
+     .icon = "DOOM",
+     .primary_code = "PRBOOM",
+     .rom_directory = "Doom (PRBOOM)"},
+    {.tag = "P8",
+     .name = "Pico-8",
+     .group = "Computer",
+     .icon = "PICO8",
+     .primary_code = "P8",
+     .rom_directory = "Pico-8 (P8)"},
+    {.tag = "FBN",
+     .name = "Arcade",
+     .group = "Arcade",
+     .icon = "FBN",
+     .primary_code = "FBN",
+     .rom_directory = "Arcade (FBN)"},
+    {.tag = "A2600",
+     .name = "Atari 2600",
+     .group = "Atari",
+     .icon = "ATARI2600",
+     .primary_code = "A2600",
+     .rom_directory = "Atari 2600 (A2600)"},
+    {.tag = "A5200",
+     .name = "Atari 5200",
+     .group = "Atari",
+     .icon = "ATARI5200",
+     .primary_code = "A5200",
+     .rom_directory = "Atari 5200 (A5200)"},
+    {.tag = "A7800",
+     .name = "Atari 7800",
+     .group = "Atari",
+     .icon = "ATARI7800",
+     .primary_code = "A7800",
+     .rom_directory = "Atari 7800 (A7800)"},
+    {.tag = "LYNX",
+     .name = "Atari Lynx",
+     .group = "Atari",
+     .icon = "LYNX",
+     .primary_code = "LYNX",
+     .rom_directory = "Atari Lynx (LYNX)"},
+    {.tag = "FDS",
+     .name = "Famicom Disk System",
+     .group = "Nintendo",
+     .icon = "FDS",
+     .primary_code = "FDS",
+     .rom_directory = "Famicom Disk System (FDS)"},
+    {.tag = "GB",
+     .name = "Game Boy",
+     .group = "Nintendo",
+     .icon = "GB",
+     .primary_code = "GB",
+     .rom_directory = "Game Boy (GB)"},
+    {.tag = "GBA",
+     .name = "Game Boy Advance",
+     .group = "Nintendo",
+     .icon = "GBA",
+     .primary_code = "GBA",
+     .rom_directory = "Game Boy Advance (GBA)"},
+    {.tag = "MGBA",
+     .name = "Game Boy Advance",
+     .group = "Nintendo",
+     .icon = "GBA",
+     .primary_code = "MGBA",
+     .rom_directory = "Game Boy Advance (MGBA)"},
+    {.tag = "GBC",
+     .name = "Game Boy Color",
+     .group = "Nintendo",
+     .icon = "GBC",
+     .primary_code = "GBC",
+     .rom_directory = "Game Boy Color (GBC)"},
+    {.tag = "FC",
+     .name = "NES/Famicom",
+     .group = "Nintendo",
+     .icon = "NES",
+     .primary_code = "FC",
+     .rom_directory = "Nintendo Entertainment System (FC)"},
+    {.tag = "PKM",
+     .name = "Pokemon mini",
+     .group = "Nintendo",
+     .icon = "POKEMINI",
+     .primary_code = "PKM",
+     .rom_directory = "Pokémon mini (PKM)"},
+    {.tag = "SFC",
+     .name = "SNES",
+     .group = "Nintendo",
+     .icon = "SNES",
+     .primary_code = "SFC",
+     .rom_directory = "Super Nintendo Entertainment System (SFC)"},
+    {.tag = "SUPA",
+     .name = "SNES",
+     .group = "Nintendo",
+     .icon = "SNES",
+     .primary_code = "SUPA",
+     .rom_directory = "Super Nintendo Entertainment System (SUPA)"},
+    {.tag = "SGB",
+     .name = "Super Game Boy",
+     .group = "Nintendo",
+     .icon = "GB",
+     .primary_code = "SGB",
+     .rom_directory = "Super Game Boy (SGB)"},
+    {.tag = "VB",
+     .name = "Virtual Boy",
+     .group = "Nintendo",
+     .icon = "VIRTUALBOY",
+     .primary_code = "VB",
+     .rom_directory = "Virtual Boy (VB)"},
+    {.tag = "32X",
+     .name = "Sega 32X",
+     .group = "Sega",
+     .icon = "32X",
+     .primary_code = "32X",
+     .rom_directory = "Sega 32X (32X)"},
+    {.tag = "SEGACD",
+     .name = "Sega CD",
+     .group = "Sega",
+     .icon = "SEGACD",
+     .primary_code = "SEGACD",
+     .rom_directory = "Sega CD (SEGACD)"},
+    {.tag = "GG",
+     .name = "Sega Game Gear",
+     .group = "Sega",
+     .icon = "GG",
+     .primary_code = "GG",
+     .rom_directory = "Sega Game Gear (GG)"},
+    {.tag = "MD",
+     .name = "Sega Genesis",
+     .group = "Sega",
+     .icon = "MD",
+     .primary_code = "MD",
+     .rom_directory = "Sega Genesis (MD)"},
+    {.tag = "SMS",
+     .name = "Sega Master System",
+     .group = "Sega",
+     .icon = "SMS",
+     .primary_code = "SMS",
+     .rom_directory = "Sega Master System (SMS)"},
+    {.tag = "SG1000",
+     .name = "Sega SG-1000",
+     .group = "Sega",
+     .icon = "SG1000",
+     .primary_code = "SG1000",
+     .rom_directory = "Sega SG-1000 (SG1000)"},
+    {.tag = "PS",
+     .name = "Sony PlayStation",
+     .group = "Sony",
+     .icon = "PS",
+     .primary_code = "PS",
+     .rom_directory = "Sony PlayStation (PS)"},
+    {.tag = "NGP",
+     .name = "Neo Geo Pocket",
+     .group = "SNK",
+     .icon = "NGP",
+     .primary_code = "NGP",
+     .rom_directory = "Neo Geo Pocket (NGP)"},
+    {.tag = "NGPC",
+     .name = "Neo Geo Pocket Color",
+     .group = "SNK",
+     .icon = "NGPC",
+     .primary_code = "NGPC",
+     .rom_directory = "Neo Geo Pocket Color (NGPC)"},
+    {.tag = "PCE",
+     .name = "PC Engine",
+     .group = "NEC",
+     .icon = "PCE",
+     .primary_code = "PCE",
+     .rom_directory = "TurboGrafx-16 (PCE)"},
+    {.tag = "COLECO",
+     .name = "Colecovision",
+     .group = "Other",
+     .icon = "COLECOVISION",
+     .primary_code = "COLECO",
+     .rom_directory = "Colecovision (COLECO)"},
+};
+
+typedef struct cs_discovered_rom_dir {
+    char system_name[128];
+    char system_code[32];
+    char dir_name[256];
+} cs_discovered_rom_dir;
+
+static int cs_write_string(char *dst, size_t size, const char *value) {
+    int written;
+
+    if (!dst || size == 0 || !value) {
+        return -1;
+    }
+
+    written = snprintf(dst, size, "%s", value);
+    return (written < 0 || (size_t) written >= size) ? -1 : 0;
+}
+
+static int cs_platform_component_is_safe(const char *value) {
+    size_t i;
+
+    if (!value || value[0] == '\0') {
+        return 0;
+    }
+    if (value[0] == '.') {
+        return 0;
+    }
+    if ((value[0] == '.' && value[1] == '\0')
+        || (value[0] == '.' && value[1] == '.' && value[2] == '\0')) {
+        return 0;
+    }
+
+    for (i = 0; value[i] != '\0'; ++i) {
+        unsigned char ch = (unsigned char) value[i];
+
+        if (ch < 0x20 || ch == '/' || ch == '\\') {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static int cs_platform_known_index(const char *tag) {
+    size_t i;
+
+    if (!tag || tag[0] == '\0') {
+        return -1;
+    }
+
+    for (i = 0; i < sizeof(g_platforms) / sizeof(g_platforms[0]); ++i) {
+        if (strcmp(g_platforms[i].tag, tag) == 0) {
+            return (int) i;
+        }
+    }
+
+    if (strcmp(tag, "NES") == 0) {
+        return cs_platform_known_index("FC");
+    }
+    if (strcmp(tag, "SNES") == 0) {
+        return cs_platform_known_index("SFC");
+    }
+    if (strcmp(tag, "GBA_ALT") == 0) {
+        return cs_platform_known_index("MGBA");
+    }
+
+    return -1;
+}
+
+static int cs_platform_codes_equal(const char *left, const char *right) {
+    int left_index;
+    int right_index;
+
+    if (!left || !right) {
+        return 0;
+    }
+    if (strcmp(left, right) == 0) {
+        return 1;
+    }
+
+    left_index = cs_platform_known_index(left);
+    right_index = cs_platform_known_index(right);
+    return left_index >= 0 && right_index >= 0 && left_index == right_index;
+}
+
+static int cs_platform_is_directory(const char *path) {
+    struct stat st;
+
+    if (!path) {
+        return 0;
+    }
+    if (lstat(path, &st) != 0) {
+        return 0;
+    }
+
+    return S_ISDIR(st.st_mode) ? 1 : 0;
+}
+
+static const char *cs_platform_custom_icon(const char *system_code) {
+    if (!system_code || system_code[0] == '\0') {
+        return "DOS";
+    }
+    if (cs_platform_codes_equal(system_code, "3DO")) {
+        return "3DO";
+    }
+    if (cs_platform_codes_equal(system_code, "A800") || strcmp(system_code, "ATARI800") == 0) {
+        return "A800";
+    }
+    if (cs_platform_codes_equal(system_code, "DC") || cs_platform_codes_equal(system_code, "FLYCAST")) {
+        return "DC";
+    }
+    if (cs_platform_codes_equal(system_code, "EASYRPG") || strcmp(system_code, "RPGM") == 0) {
+        return "RPGM";
+    }
+    if (cs_platform_codes_equal(system_code, "INTV")) {
+        return "INTELLIVISION";
+    }
+    if (cs_platform_codes_equal(system_code, "JAGUAR")) {
+        return "JAGUAR";
+    }
+    if (cs_platform_codes_equal(system_code, "N64") || cs_platform_codes_equal(system_code, "P64")) {
+        return "N64";
+    }
+    if (cs_platform_codes_equal(system_code, "NDS")) {
+        return "NDS";
+    }
+    if (cs_platform_codes_equal(system_code, "PICO")
+        || cs_platform_codes_equal(system_code, "P8")
+        || strcmp(system_code, "PICO8") == 0) {
+        return "PICO8";
+    }
+    if (cs_platform_codes_equal(system_code, "PSP") || cs_platform_codes_equal(system_code, "PPSSPP")) {
+        return "PSP";
+    }
+    if (cs_platform_codes_equal(system_code, "SATURN")) {
+        return "SATURN";
+    }
+    if (cs_platform_codes_equal(system_code, "SCUMMVM")) {
+        return "SCUMMVM";
+    }
+    if (cs_platform_codes_equal(system_code, "SUPERGRAFX")) {
+        return "SUPERGRAFX";
+    }
+    if (cs_platform_codes_equal(system_code, "TIC") || strcmp(system_code, "TIC80") == 0) {
+        return "TIC80";
+    }
+    return "DOS";
+}
+
+static int cs_platform_find_discovered_by_code(const cs_discovered_rom_dir *dirs,
+                                               size_t dir_count,
+                                               const char *system_code) {
+    size_t i;
+
+    if (!dirs || !system_code) {
+        return -1;
+    }
+
+    for (i = 0; i < dir_count; ++i) {
+        if (cs_platform_codes_equal(dirs[i].system_code, system_code)) {
+            return (int) i;
+        }
+    }
+
+    return -1;
+}
+
+static int cs_platform_scan_rom_dirs(const cs_paths *paths,
+                                     cs_discovered_rom_dir *dirs,
+                                     size_t capacity,
+                                     size_t *count_out) {
+    DIR *dir;
+    struct dirent *entry;
+    size_t count = 0;
+
+    if (count_out) {
+        *count_out = 0;
+    }
+    if (!paths || !dirs || capacity == 0) {
+        return -1;
+    }
+
+    dir = opendir(paths->roms_root);
+    if (!dir) {
+        return 0;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        char system_name[sizeof(dirs[0].system_name)];
+        char system_code[sizeof(dirs[0].system_code)];
+        char absolute_path[CS_PATH_MAX];
+
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+        if (snprintf(absolute_path, sizeof(absolute_path), "%s/%s", paths->roms_root, entry->d_name) < 0) {
+            continue;
+        }
+        if (!cs_platform_is_directory(absolute_path)) {
+            continue;
+        }
+        if (cs_platform_parse_rom_directory(entry->d_name,
+                                            system_name,
+                                            sizeof(system_name),
+                                            system_code,
+                                            sizeof(system_code))
+            != 0) {
+            continue;
+        }
+        if (cs_platform_find_discovered_by_code(dirs, count, system_code) >= 0) {
+            continue;
+        }
+        if (count >= capacity) {
+            break;
+        }
+
+        if (cs_write_string(dirs[count].system_name, sizeof(dirs[count].system_name), system_name) != 0
+            || cs_write_string(dirs[count].system_code, sizeof(dirs[count].system_code), system_code) != 0
+            || cs_write_string(dirs[count].dir_name, sizeof(dirs[count].dir_name), entry->d_name) != 0) {
+            closedir(dir);
+            return -1;
+        }
+
+        count += 1;
+    }
+
+    closedir(dir);
+    if (count_out) {
+        *count_out = count;
+    }
+    return 0;
+}
+
+static int cs_platform_make_custom(const cs_discovered_rom_dir *dir, cs_platform_info *target) {
+    if (!dir || !target) {
+        return -1;
+    }
+
+    memset(target, 0, sizeof(*target));
+    if (cs_write_string(target->tag, sizeof(target->tag), dir->system_code) != 0
+        || cs_write_string(target->name, sizeof(target->name), dir->system_name) != 0
+        || cs_write_string(target->group, sizeof(target->group), "Custom") != 0
+        || cs_write_string(target->icon, sizeof(target->icon), cs_platform_custom_icon(dir->system_code)) != 0
+        || cs_write_string(target->primary_code, sizeof(target->primary_code), dir->system_code) != 0
+        || cs_write_string(target->rom_directory, sizeof(target->rom_directory), dir->dir_name) != 0) {
+        return -1;
+    }
+
+    target->is_custom = 1;
+    return 0;
+}
+
+size_t cs_platform_count(void) {
+    return sizeof(g_platforms) / sizeof(g_platforms[0]);
+}
+
+const cs_platform_info *cs_platform_at(size_t index) {
+    if (index >= cs_platform_count()) {
+        return NULL;
+    }
+
+    return &g_platforms[index];
+}
+
+const cs_platform_info *cs_platform_find(const char *tag) {
+    int index = cs_platform_known_index(tag);
+
+    if (index < 0) {
+        return NULL;
+    }
+
+    return &g_platforms[index];
+}
+
+int cs_platform_copy(const cs_platform_info *source, cs_platform_info *target) {
+    if (!source || !target) {
+        return -1;
+    }
+
+    *target = *source;
+    return 0;
+}
+
+int cs_platform_resolve(const cs_paths *paths, const char *tag, cs_platform_info *target) {
+    const cs_platform_info *known;
+    cs_discovered_rom_dir dirs[CS_DISCOVERED_PLATFORM_MAX];
+    size_t dir_count = 0;
+    int discovered_index;
+
+    if (!tag || !target) {
+        return -1;
+    }
+
+    known = cs_platform_find(tag);
+    if (known && cs_platform_copy(known, target) != 0) {
+        return -1;
+    }
+
+    if (!paths) {
+        return known ? 0 : -1;
+    }
+    if (cs_platform_scan_rom_dirs(paths, dirs, CS_DISCOVERED_PLATFORM_MAX, &dir_count) != 0) {
+        return -1;
+    }
+
+    if (known) {
+        discovered_index = cs_platform_find_discovered_by_code(dirs, dir_count, target->tag);
+        if (discovered_index >= 0
+            && cs_write_string(target->rom_directory,
+                               sizeof(target->rom_directory),
+                               dirs[discovered_index].dir_name)
+                   != 0) {
+            return -1;
+        }
+        return 0;
+    }
+
+    discovered_index = cs_platform_find_discovered_by_code(dirs, dir_count, tag);
+    if (discovered_index < 0) {
+        return -1;
+    }
+
+    return cs_platform_make_custom(&dirs[discovered_index], target);
+}
+
+int cs_platform_discover(const cs_paths *paths,
+                         cs_platform_info *platforms,
+                         size_t capacity,
+                         size_t *count_out) {
+    cs_discovered_rom_dir dirs[CS_DISCOVERED_PLATFORM_MAX];
+    size_t dir_count = 0;
+    size_t count = 0;
+    size_t i;
+
+    if (count_out) {
+        *count_out = 0;
+    }
+    if (!paths || !platforms || capacity == 0) {
+        return -1;
+    }
+    if (cs_platform_scan_rom_dirs(paths, dirs, CS_DISCOVERED_PLATFORM_MAX, &dir_count) != 0) {
+        return -1;
+    }
+
+    for (i = 0; i < cs_platform_count() && count < capacity; ++i) {
+        platforms[count] = g_platforms[i];
+
+        {
+            int discovered_index =
+                cs_platform_find_discovered_by_code(dirs, dir_count, platforms[count].tag);
+
+            if (discovered_index >= 0
+                && cs_write_string(platforms[count].rom_directory,
+                                   sizeof(platforms[count].rom_directory),
+                                   dirs[discovered_index].dir_name)
+                       != 0) {
+                return -1;
+            }
+        }
+
+        count += 1;
+    }
+
+    for (i = 0; i < dir_count && count < capacity; ++i) {
+        if (cs_platform_find(dirs[i].system_code) != NULL) {
+            continue;
+        }
+        if (cs_platform_make_custom(&dirs[i], &platforms[count]) != 0) {
+            return -1;
+        }
+        count += 1;
+    }
+
+    if (count_out) {
+        *count_out = count;
+    }
+    return 0;
+}
+
+int cs_platform_parse_rom_directory(const char *dir_name,
+                                    char *system_name,
+                                    size_t system_name_size,
+                                    char *system_code,
+                                    size_t system_code_size) {
+    const char *last_open;
+    const char *last_close;
+    size_t name_len;
+    size_t code_len;
+
+    if (!dir_name || !system_name || system_name_size == 0 || !system_code || system_code_size == 0) {
+        return -1;
+    }
+
+    last_open = strrchr(dir_name, '(');
+    if (!last_open || last_open == dir_name || last_open == dir_name + 1 || *(last_open - 1) != ' ') {
+        return -1;
+    }
+
+    last_close = strrchr(dir_name, ')');
+    if (!last_close || last_close < last_open || last_close[1] != '\0') {
+        return -1;
+    }
+
+    name_len = (size_t) ((last_open - 1) - dir_name);
+    code_len = (size_t) (last_close - (last_open + 1));
+    if (name_len == 0 || code_len == 0 || name_len >= system_name_size || code_len >= system_code_size) {
+        return -1;
+    }
+
+    memcpy(system_name, dir_name, name_len);
+    system_name[name_len] = '\0';
+    memcpy(system_code, last_open + 1, code_len);
+    system_code[code_len] = '\0';
+    if (!cs_platform_component_is_safe(system_code)) {
+        return -1;
+    }
+    return 0;
+}

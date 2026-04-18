@@ -1,0 +1,7 @@
+.superpowers/
+.worktrees/
+build/
+node_modules/
+.DS_Store
+web/.DS_Store
+fixtures/mock_sdcard/.userdata/shared/CentralScrutinizer/trusted-clients.json

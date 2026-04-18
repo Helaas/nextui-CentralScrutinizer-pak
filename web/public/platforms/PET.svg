@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300">
+  <path d="M70,105 L230,105 L235,115 L260,115 C270,115 275,120 275,130 L275,235 C275,245 270,250 260,250 L40,250 C30,250 25,245 25,235 L25,130 C25,120 30,115 40,115 L65,115 Z" fill="#ffffff" stroke="#ffffff" stroke-width="8" stroke-linejoin="round" />
+  
+  <path d="M40,115 L260,115 L268,242 L32,242 Z" fill="#cccccc" />
+  
+  <path d="M75,108 L225,108 L210,45 L90,45 Z" fill="#b3b3b3" />
+  <path d="M90,45 L210,45 L205,40 L95,40 Z" fill="#999999" />
+  
+  <rect x="105" y="55" width="90" height="40" rx="3" fill="#666666" />
+  <rect x="110" y="59" width="80" height="32" rx="2" fill="#4d4d4d" />
+  
+  <rect x="45" y="135" width="85" height="90" rx="2" fill="#b3b3b3" />
+  <rect x="52" y="145" width="70" height="45" rx="1" fill="#999999" />
+  <circle cx="72" cy="167" r="8" fill="#cccccc" />
+  <circle cx="102" cy="167" r="8" fill="#cccccc" />
+  <rect x="52" y="200" width="70" height="15" rx="1" fill="#808080" />
+  
+  <rect x="145" y="135" width="105" height="90" rx="2" fill="#b3b3b3" />
+  <g fill="#666666">
+    <rect x="152" y="145" width="10" height="10" rx="1" />
+    <rect x="167" y="145" width="10" height="10" rx="1" />
+    <rect x="182" y="145" width="10" height="10" rx="1" />
+    <rect x="197" y="145" width="10" height="10" rx="1" />
+    <rect x="212" y="145" width="10" height="10" rx="1" />
+    <rect x="227" y="145" width="10" height="10" rx="1" />
+    
+    <rect x="152" y="160" width="10" height="10" rx="1" />
+    <rect x="167" y="160" width="10" height="10" rx="1" />
+    <rect x="182" y="160" width="10" height="10" rx="1" />
+    <rect x="197" y="160" width="10" height="10" rx="1" />
+    <rect x="212" y="160" width="10" height="10" rx="1" />
+    <rect x="227" y="160" width="10" height="10" rx="1" />
+
+    <rect x="152" y="175" width="10" height="10" rx="1" />
+    <rect x="167" y="175" width="10" height="10" rx="1" />
+    <rect x="182" y="175" width="10" height="10" rx="1" />
+    <rect x="197" y="175" width="10" height="10" rx="1" />
+    <rect x="212" y="175" width="10" height="10" rx="1" />
+    <rect x="227" y="175" width="10" height="10" rx="1" />
+    
+    <rect x="152" y="205" width="70" height="10" rx="1" /> </g>
+
+  <path d="M40,115 L260,115 L258,125 L42,125 Z" fill="#b3b3b3" />
+</svg>

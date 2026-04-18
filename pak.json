@@ -1,0 +1,16 @@
+{
+  "name": "The Central Scrutinizer",
+  "version": "v0.1.0",
+  "type": "TOOL",
+  "description": "Device-hosted library manager for ROMs, artwork, and BIOS that runs an HTTP server while open; quit the pak to stop it.",
+  "author": "Kevin Vranken",
+  "release_filename": "Central Scrutinizer.pakz",
+  "changelog": {
+    "v0.1.0": "Initial paired web manager scaffold with Apostrophe packaging."
+  },
+  "platforms": [
+    "tg5040",
+    "tg5050",
+    "my355"
+  ]
+}
