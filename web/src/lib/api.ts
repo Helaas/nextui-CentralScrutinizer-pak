@@ -40,6 +40,17 @@ export type UploadHandle = {
   promise: Promise<void>;
 };
 
+export type UploadSummary = {
+  uploaded: number;
+  failed: number;
+  cancelled: boolean;
+};
+
+export type UploadBatchedHandle = {
+  cancel: () => void;
+  promise: Promise<UploadSummary>;
+};
+
 function toQuery(params: Record<string, string | undefined>): string {
   const search = new URLSearchParams();
 
@@ -239,12 +250,88 @@ export function beginUploadFiles(
   };
 }
 
+export const UPLOAD_BATCH_SIZE = 32;
+
 export async function uploadFiles(
   request: UploadRequest,
   csrf: string,
   onProgress?: (value: number) => void,
 ): Promise<void> {
-  await beginUploadFiles(request, csrf, onProgress).promise;
+  const summary = await beginUploadFilesBatched(request, csrf, onProgress).promise;
+
+  if (summary.cancelled) {
+    throw new UploadAbortedError();
+  }
+  if (summary.failed > 0) {
+    throw new Error("Upload failed");
+  }
+}
+
+/* Uploads in batches of UPLOAD_BATCH_SIZE so a folder larger than the server's CS_UPLOAD_MAX_FILES
+ * cap still succeeds. Because batches commit progressively, this helper resolves with a summary
+ * of what actually landed on disk instead of rejecting — callers MUST refresh their view and
+ * report partial state accurately, otherwise retries hit already-written files.
+ */
+export function beginUploadFilesBatched(
+  request: UploadRequest,
+  csrf: string,
+  onProgress?: (value: number) => void,
+): UploadBatchedHandle {
+  let cancelled = false;
+  let activeHandle: UploadHandle | null = null;
+
+  const promise = (async (): Promise<UploadSummary> => {
+    const { files, ...rest } = request;
+    const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+    let uploadedBytes = 0;
+    let uploaded = 0;
+    let failed = 0;
+
+    for (let offset = 0; offset < files.length; offset += UPLOAD_BATCH_SIZE) {
+      if (cancelled) {
+        break;
+      }
+
+      const batch = files.slice(offset, offset + UPLOAD_BATCH_SIZE);
+      const batchBytes = batch.reduce((sum, f) => sum + f.size, 0);
+
+      const handle = beginUploadFiles({ ...rest, files: batch }, csrf, (batchPct) => {
+        if (onProgress && totalBytes > 0) {
+          const batchLoaded = (batchPct / 100) * batchBytes;
+          onProgress(Math.round(((uploadedBytes + batchLoaded) / totalBytes) * 100));
+        }
+      });
+
+      activeHandle = handle;
+      try {
+        await handle.promise;
+        uploaded += batch.length;
+      } catch (error) {
+        if (error instanceof UploadAbortedError) {
+          cancelled = true;
+        } else {
+          failed += batch.length;
+        }
+      } finally {
+        activeHandle = null;
+      }
+
+      uploadedBytes += batchBytes;
+      if (onProgress && totalBytes > 0) {
+        onProgress(Math.round((uploadedBytes / totalBytes) * 100));
+      }
+    }
+
+    return { uploaded, failed, cancelled };
+  })();
+
+  return {
+    cancel: () => {
+      cancelled = true;
+      activeHandle?.cancel();
+    },
+    promise,
+  };
 }
 
 export async function replaceArt(

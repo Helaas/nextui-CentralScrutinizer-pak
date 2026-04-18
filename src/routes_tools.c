@@ -7,10 +7,20 @@
 
 #include <stdlib.h>
 
+/* Defensive ceiling to bound allocation and the amount of work the web UI/cleanup path must
+ * process. On target handhelds (TG5040/TG5050/MY355, ~1 GB RAM) and over the in-process civetweb
+ * server, surfacing tens of thousands of rows would OOM the app or hammer the single-threaded
+ * server with concurrent deletes. The UI renders truncated=true and asks the user to clean the
+ * first batch before re-scanning.
+ */
+#define CS_DOTCLEAN_HARD_CAP ((size_t) 10000)
+
 int cs_route_mac_dotfiles_handler(struct mg_connection *conn, void *cbdata) {
     cs_app *app = (cs_app *) cbdata;
     cs_dotclean_entry *entries = NULL;
-    size_t entry_count = 0;
+    size_t total_count = 0;
+    size_t capacity = 0;
+    size_t emit_count = 0;
     int truncated = 0;
     size_t i;
     int guard_status;
@@ -23,28 +33,45 @@ int cs_route_mac_dotfiles_handler(struct mg_connection *conn, void *cbdata) {
         return guard_status;
     }
 
-    entries = (cs_dotclean_entry *) calloc(CS_DOTCLEAN_MAX_ENTRIES, sizeof(*entries));
-    if (!entries) {
-        return cs_routes_write_json(conn, 500, "Internal Server Error", "{\"error\":\"alloc_failed\"}");
-    }
-    if (cs_dotclean_scan(&app->paths, entries, CS_DOTCLEAN_MAX_ENTRIES, &entry_count, &truncated) != 0) {
-        free(entries);
+    /* First pass: count matches without allocating storage. */
+    if (cs_dotclean_scan(&app->paths, NULL, 0, &total_count, NULL) != 0) {
         return cs_routes_write_json(conn, 500, "Internal Server Error", "{\"error\":\"dotclean_scan_failed\"}");
     }
+    capacity = total_count < CS_DOTCLEAN_HARD_CAP ? total_count : CS_DOTCLEAN_HARD_CAP;
+    if (capacity > 0) {
+        int scan_truncated = 0;
+
+        entries = (cs_dotclean_entry *) calloc(capacity, sizeof(*entries));
+        if (!entries) {
+            return cs_routes_write_json(conn, 500, "Internal Server Error", "{\"error\":\"alloc_failed\"}");
+        }
+        /* Second pass: populate entries. The scanner always reports the full match count in
+         * total_count, even if the filesystem changed between passes or the buffer is smaller
+         * than the first-pass count. truncated_out flags when the buffer was too small.
+         */
+        if (cs_dotclean_scan(&app->paths, entries, capacity, &total_count, &scan_truncated) != 0) {
+            free(entries);
+            return cs_routes_write_json(conn, 500, "Internal Server Error", "{\"error\":\"dotclean_scan_failed\"}");
+        }
+        if (scan_truncated) {
+            truncated = 1;
+        }
+    }
+    emit_count = total_count < capacity ? total_count : capacity;
 
     if (cs_routes_stream_begin_json_response(conn) != 0) {
         free(entries);
         return 1;
     }
     if (cs_routes_stream_literal(conn, "{\"count\":") != 0
-        || cs_routes_stream_unsigned(conn, (unsigned long long) entry_count) != 0
+        || cs_routes_stream_unsigned(conn, (unsigned long long) total_count) != 0
         || cs_routes_stream_literal(conn, ",\"truncated\":") != 0
         || cs_routes_stream_literal(conn, truncated ? "true" : "false") != 0
         || cs_routes_stream_literal(conn, ",\"entries\":[") != 0) {
         goto stream_fail;
     }
 
-    for (i = 0; i < entry_count && i < CS_DOTCLEAN_MAX_ENTRIES; ++i) {
+    for (i = 0; i < emit_count; ++i) {
         if (i > 0 && cs_routes_stream_literal(conn, ",") != 0) {
             goto stream_fail;
         }

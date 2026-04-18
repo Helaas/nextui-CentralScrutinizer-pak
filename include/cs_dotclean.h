@@ -5,7 +5,6 @@
 
 #include "cs_paths.h"
 
-#define CS_DOTCLEAN_MAX_ENTRIES 512
 #define CS_DOTCLEAN_MAX_DEPTH 32
 
 typedef struct cs_dotclean_entry {

@@ -8,7 +8,7 @@ const mockApi = vi.hoisted(() => ({
       this.name = "UploadAbortedError";
     }
   },
-  beginUploadFiles: vi.fn(),
+  beginUploadFilesBatched: vi.fn(),
   buildDownloadUrl: vi.fn(() => "/api/download?scope=roms&path=Pokemon%20Emerald.gba"),
   createFolder: vi.fn(),
   deleteItem: vi.fn(),
@@ -573,9 +573,9 @@ describe("Page", () => {
     mockApi.getSession.mockResolvedValue(pairedSession());
     mockApi.getPlatforms.mockResolvedValue(platformGroups());
     mockApi.getBrowser.mockResolvedValue(fileBrowserResponse());
-    mockApi.beginUploadFiles.mockReturnValue({
+    mockApi.beginUploadFilesBatched.mockReturnValue({
       cancel: vi.fn(),
-      promise: Promise.resolve(),
+      promise: Promise.resolve({ uploaded: 1, failed: 0, cancelled: false }),
     });
 
     render(<Page />);
@@ -584,8 +584,8 @@ describe("Page", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Upload Folder" }));
 
     await screen.findByText("Uploaded 1 file.");
-    expect(mockApi.beginUploadFiles).toHaveBeenCalledTimes(1);
-    expect(mockApi.beginUploadFiles).toHaveBeenCalledWith(
+    expect(mockApi.beginUploadFilesBatched).toHaveBeenCalledTimes(1);
+    expect(mockApi.beginUploadFilesBatched).toHaveBeenCalledWith(
       expect.objectContaining({
         files: [folderFile],
         path: undefined,
@@ -598,18 +598,18 @@ describe("Page", () => {
   });
 
   it("shows a cancel action for uploads and reports when the upload is cancelled", async () => {
-    let rejectUpload: ((reason: unknown) => void) | undefined;
+    let resolveUpload: ((summary: { uploaded: number; failed: number; cancelled: boolean }) => void) | undefined;
     const cancel = vi.fn(() => {
-      rejectUpload?.(new mockApi.UploadAbortedError());
+      resolveUpload?.({ uploaded: 0, failed: 0, cancelled: true });
     });
 
     mockApi.getSession.mockResolvedValue(pairedSession());
     mockApi.getPlatforms.mockResolvedValue(platformGroups());
     mockApi.getBrowser.mockResolvedValue(fileBrowserResponse());
-    mockApi.beginUploadFiles.mockImplementation(() => ({
+    mockApi.beginUploadFilesBatched.mockImplementation(() => ({
       cancel,
-      promise: new Promise<void>((_, reject) => {
-        rejectUpload = reject;
+      promise: new Promise<{ uploaded: number; failed: number; cancelled: boolean }>((resolve) => {
+        resolveUpload = resolve;
       }),
     }));
 

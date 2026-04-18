@@ -62,7 +62,7 @@ static void test_dotclean_finds_expected_entries_and_skips_large_trees(void) {
     char deep_path[PATH_MAX];
     char deep_ds_store[PATH_MAX];
     cs_paths paths = {0};
-    cs_dotclean_entry entries[CS_DOTCLEAN_MAX_ENTRIES];
+    cs_dotclean_entry entries[64];
     size_t count = 0;
     size_t count_only = 0;
     int truncated = 1;
@@ -119,7 +119,7 @@ static void test_dotclean_finds_expected_entries_and_skips_large_trees(void) {
     assert(cs_dotclean_scan(&paths, NULL, 0, &count_only, &count_only_truncated) == 0);
     assert(count_only == 5);
     assert(count_only_truncated == 0);
-    assert(cs_dotclean_scan(&paths, entries, CS_DOTCLEAN_MAX_ENTRIES, &count, &truncated) == 0);
+    assert(cs_dotclean_scan(&paths, entries, sizeof(entries) / sizeof(entries[0]), &count, &truncated) == 0);
 
     assert(count == 5);
     assert(truncated == 0);
@@ -141,7 +141,8 @@ static void test_dotclean_reports_truncation_without_losing_total_count(void) {
     char *root;
     char roms_dir[PATH_MAX];
     cs_paths paths = {0};
-    cs_dotclean_entry entries[CS_DOTCLEAN_MAX_ENTRIES];
+    const size_t capacity = 16;
+    cs_dotclean_entry entries[16];
     size_t count = 0;
     int truncated = 0;
     size_t i;
@@ -152,7 +153,7 @@ static void test_dotclean_reports_truncation_without_losing_total_count(void) {
     assert(snprintf(roms_dir, sizeof(roms_dir), "%s/Roms", root) > 0);
     make_dir(roms_dir);
 
-    for (i = 0; i < CS_DOTCLEAN_MAX_ENTRIES + 1; ++i) {
+    for (i = 0; i < capacity + 1; ++i) {
         char artifact_path[PATH_MAX];
 
         assert(snprintf(artifact_path, sizeof(artifact_path), "%s/._artifact%03zu", roms_dir, i) > 0);
@@ -161,9 +162,9 @@ static void test_dotclean_reports_truncation_without_losing_total_count(void) {
 
     set_sdcard_root_realpath(root);
     assert(cs_paths_init(&paths) == 0);
-    assert(cs_dotclean_scan(&paths, entries, CS_DOTCLEAN_MAX_ENTRIES, &count, &truncated) == 0);
+    assert(cs_dotclean_scan(&paths, entries, capacity, &count, &truncated) == 0);
 
-    assert(count == CS_DOTCLEAN_MAX_ENTRIES + 1);
+    assert(count == capacity + 1);
     assert(truncated == 1);
     assert(entries[0].path[0] != '\0');
 }

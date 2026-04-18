@@ -252,6 +252,7 @@ static int cs_app_run_ui(cs_app *app) {
                 continue;
             default:
                 if (server_started) {
+                    cs_terminal_manager_close_all(app, "{\"type\":\"error\",\"error\":\"server_shutdown\"}");
                     cs_server_stop();
                 }
                 cs_ui_shutdown();

@@ -16,8 +16,7 @@ import { ScreenshotsToolView } from "../components/screenshots-tool-view";
 import { TerminalToolView } from "../components/terminal-tool-view";
 import { ToolsView } from "../components/tools-view";
 import {
-  UploadAbortedError,
-  beginUploadFiles,
+  beginUploadFilesBatched,
   createFolder,
   deleteItem,
   getBrowser,
@@ -571,7 +570,7 @@ export default function Page() {
 
     await withBusy(async () => {
       const label = `Uploading ${files.length} file${files.length === 1 ? "" : "s"}`;
-      const upload = beginUploadFiles({ ...scopeState, files }, csrf, (progress) => {
+      const upload = beginUploadFilesBatched({ ...scopeState, files }, csrf, (progress) => {
         setTransfer((current) => ({ ...current, progress }));
       });
 
@@ -583,16 +582,26 @@ export default function Page() {
         progress: 0,
       });
       try {
-        await upload.promise;
-        await refreshCurrentData();
-        setNotice(`Uploaded ${files.length} file${files.length === 1 ? "" : "s"}.`);
-      } catch (error) {
-        if (error instanceof UploadAbortedError) {
-          setNotice("Upload cancelled.");
-          return;
-        }
+        const summary = await upload.promise;
 
-        setNotice(error instanceof Error ? error.message : "Upload failed.");
+        /* Refresh regardless of outcome — earlier batches may have committed before a later
+         * batch failed or the user cancelled, so the browser view is out of sync either way.
+         */
+        await refreshCurrentData();
+
+        const plural = (n: number) => (n === 1 ? "" : "s");
+
+        if (summary.cancelled && summary.uploaded === 0) {
+          setNotice("Upload cancelled.");
+        } else if (summary.cancelled) {
+          setNotice(`Upload cancelled after ${summary.uploaded} of ${files.length} file${plural(files.length)}.`);
+        } else if (summary.failed > 0 && summary.uploaded === 0) {
+          setNotice("Upload failed.");
+        } else if (summary.failed > 0) {
+          setNotice(`Uploaded ${summary.uploaded} file${plural(summary.uploaded)}, ${summary.failed} failed.`);
+        } else {
+          setNotice(`Uploaded ${summary.uploaded} file${plural(summary.uploaded)}.`);
+        }
       } finally {
         clearTransfer();
       }

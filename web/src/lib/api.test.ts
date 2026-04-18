@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  UPLOAD_BATCH_SIZE,
   beginUploadFiles,
+  beginUploadFilesBatched,
   buildDownloadUrl,
   getBrowser,
   getMacDotfiles,
@@ -258,7 +260,7 @@ describe("uploadFiles", () => {
     expect((request.body?.get("scope") as string) ?? "").toBe("roms");
     expect((request.body?.get("tag") as string) ?? "").toBe("GBA");
     expect(((request.body?.get("file") as File) ?? file).name).toBe("Pokemon Emerald.gba");
-    expect(progressValue).toBe(50);
+    expect(progressValue).toBe(100);
   });
 
   it("preserves webkitRelativePath in multipart filenames for directory uploads", async () => {
@@ -300,6 +302,122 @@ describe("uploadFiles", () => {
     handle.cancel();
 
     await expect(handle.promise).rejects.toBeInstanceOf(UploadAbortedError);
+  });
+});
+
+describe("beginUploadFilesBatched", () => {
+  afterEach(() => {
+    MockXhr.instances = [];
+    MockXhr.autoLoad = true;
+    vi.unstubAllGlobals();
+  });
+
+  it("sends files in batches of UPLOAD_BATCH_SIZE", async () => {
+    const files = Array.from({ length: UPLOAD_BATCH_SIZE + 5 }, (_, i) =>
+      new File(["x"], `file-${i}.bin`, { type: "application/octet-stream" }),
+    );
+
+    vi.stubGlobal("XMLHttpRequest", MockXhr as unknown as typeof XMLHttpRequest);
+
+    await beginUploadFilesBatched(
+      { scope: "roms", tag: "GBA", files },
+      "csrf-token",
+    ).promise;
+
+    expect(MockXhr.instances).toHaveLength(2);
+
+    const firstBatchFiles = MockXhr.instances[0].body?.getAll("file") as File[];
+    const secondBatchFiles = MockXhr.instances[1].body?.getAll("file") as File[];
+
+    expect(firstBatchFiles).toHaveLength(UPLOAD_BATCH_SIZE);
+    expect(secondBatchFiles).toHaveLength(5);
+  });
+
+  it("sends a single batch when files fit within the limit", async () => {
+    const files = [
+      new File(["a"], "a.bin"),
+      new File(["b"], "b.bin"),
+    ];
+
+    vi.stubGlobal("XMLHttpRequest", MockXhr as unknown as typeof XMLHttpRequest);
+
+    await beginUploadFilesBatched(
+      { scope: "files", files },
+      "csrf-token",
+    ).promise;
+
+    expect(MockXhr.instances).toHaveLength(1);
+
+    const batchFiles = MockXhr.instances[0].body?.getAll("file") as File[];
+
+    expect(batchFiles).toHaveLength(2);
+  });
+
+  it("reports aggregated progress across batches", async () => {
+    const fileA = new File(["aaaa"], "a.bin");
+    const fileB = new File(["bbbb"], "b.bin");
+    const files = Array.from({ length: UPLOAD_BATCH_SIZE }, () => fileA).concat([fileB]);
+    const progressValues: number[] = [];
+
+    vi.stubGlobal("XMLHttpRequest", MockXhr as unknown as typeof XMLHttpRequest);
+
+    await beginUploadFilesBatched(
+      { scope: "roms", files },
+      "csrf-token",
+      (p) => progressValues.push(p),
+    ).promise;
+
+    expect(progressValues.length).toBeGreaterThan(0);
+    expect(progressValues[progressValues.length - 1]).toBe(100);
+  });
+
+  it("resolves with a cancelled summary when cancelled before any batch runs", async () => {
+    MockXhr.autoLoad = false;
+    vi.stubGlobal("XMLHttpRequest", MockXhr as unknown as typeof XMLHttpRequest);
+
+    const files = Array.from({ length: UPLOAD_BATCH_SIZE + 5 }, (_, i) =>
+      new File(["x"], `file-${i}.bin`),
+    );
+
+    const handle = beginUploadFilesBatched(
+      { scope: "roms", files },
+      "csrf-token",
+    );
+
+    handle.cancel();
+
+    const summary = await handle.promise;
+    expect(summary).toEqual({ uploaded: 0, failed: 0, cancelled: true });
+  });
+
+  it("reports partial success when a mid-batch upload fails", async () => {
+    const files = Array.from({ length: UPLOAD_BATCH_SIZE + 5 }, (_, i) =>
+      new File(["x"], `file-${i}.bin`),
+    );
+    let sendCount = 0;
+
+    class FailingSecondBatchXhr extends MockXhr {
+      send(body: FormData) {
+        sendCount += 1;
+        if (sendCount === 2) {
+          this.status = 500;
+          this.body = body;
+          this.uploadListener?.({ lengthComputable: true, loaded: 0, total: 10 });
+          this.listeners.load?.();
+          return;
+        }
+        super.send(body);
+      }
+    }
+
+    vi.stubGlobal("XMLHttpRequest", FailingSecondBatchXhr as unknown as typeof XMLHttpRequest);
+
+    const summary = await beginUploadFilesBatched(
+      { scope: "roms", files },
+      "csrf-token",
+    ).promise;
+
+    expect(summary).toEqual({ uploaded: UPLOAD_BATCH_SIZE, failed: 5, cancelled: false });
   });
 });
 
