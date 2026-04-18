@@ -1,6 +1,9 @@
 #include <assert.h>
+#include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "cs_paths.h"
@@ -37,6 +40,40 @@ static void assert_fixture_file(const char *path) {
     assert(access(path, F_OK) == 0);
 }
 
+static void make_dir(const char *path) {
+    assert(mkdir(path, 0700) == 0);
+}
+
+static void test_absolute_sdcard_path_is_canonicalized(void) {
+    cs_paths paths;
+    char template[] = "/tmp/cs-paths-XXXXXX";
+    char *root;
+    char actual_sdcard[PATH_MAX];
+    char link_sdcard[PATH_MAX];
+    char expected_root[PATH_MAX];
+
+    root = mkdtemp(template);
+    assert(root != NULL);
+
+    assert(snprintf(actual_sdcard, sizeof(actual_sdcard), "%s/sdcard-real", root) > 0);
+    assert(snprintf(link_sdcard, sizeof(link_sdcard), "%s/SDCARD", root) > 0);
+
+    make_dir(actual_sdcard);
+    assert(symlink(actual_sdcard, link_sdcard) == 0);
+    assert(realpath(actual_sdcard, expected_root) != NULL);
+
+    setenv("SDCARD_PATH", link_sdcard, 1);
+    unsetenv("CS_WEB_ROOT");
+
+    fill_sentinel(&paths);
+    assert(cs_paths_init(&paths) == 0);
+    assert(strcmp(paths.sdcard_root, expected_root) == 0);
+
+    assert(unlink(link_sdcard) == 0);
+    assert(rmdir(actual_sdcard) == 0);
+    assert(rmdir(root) == 0);
+}
+
 int main(void) {
     cs_paths paths;
     cs_paths expected;
@@ -51,6 +88,23 @@ int main(void) {
     fill_sentinel(&paths);
     assert(cs_paths_init(&paths) == 0);
     assert_default_paths(&paths);
+
+    setenv("SDCARD_PATH", "/mnt/sdcard", 1);
+    unsetenv("CS_WEB_ROOT");
+
+    fill_sentinel(&paths);
+    assert(cs_paths_init(&paths) == 0);
+    assert(strcmp(paths.sdcard_root, "/mnt/sdcard") == 0);
+    assert(strcmp(paths.shared_state_root, "/mnt/sdcard/.userdata/shared/CentralScrutinizer") == 0);
+
+    setenv("SDCARD_PATH", "/definitely/missing/sdcard", 1);
+    unsetenv("CS_WEB_ROOT");
+
+    fill_sentinel(&paths);
+    assert(cs_paths_init(&paths) == 0);
+    assert(strcmp(paths.sdcard_root, "/definitely/missing/sdcard") == 0);
+
+    test_absolute_sdcard_path_is_canonicalized();
     assert_fixture_file("fixtures/mock_sdcard/Roms/Game Boy Advance (GBA)");
     assert_fixture_file("fixtures/mock_sdcard/Roms/Game Boy Advance (GBA)/.media/Pokemon Emerald.png");
     assert_fixture_file("fixtures/mock_sdcard/Roms/PlayStation (PS)/Castlevania - Symphony of the Night.chd");

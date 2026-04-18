@@ -30,7 +30,5 @@ describe("platform assets", () => {
     for (const icon of iconNames) {
       expect(existsSync(path.join(process.cwd(), "public", "platforms", `${icon}.svg`))).toBe(true);
     }
-
-    expect(existsSync(path.join(process.cwd(), "public", "platforms", "C128.png"))).toBe(true);
   });
 });

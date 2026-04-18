@@ -271,6 +271,53 @@ static void test_symlinked_scope_root_is_rejected(void) {
     assert(rmdir(root) == 0);
 }
 
+static void test_symlinked_absolute_sdcard_root_is_canonicalized_for_files_scope(void) {
+    cs_paths paths = {0};
+    cs_browser_result result = {0};
+    char template[] = "/tmp/cs-library-sdlink-XXXXXX";
+    char *root;
+    char actual_sdcard[PATH_MAX];
+    char linked_sdcard[PATH_MAX];
+    char roms_dir[PATH_MAX];
+    char bios_dir[PATH_MAX];
+    char saves_dir[PATH_MAX];
+    char expected_root[PATH_MAX];
+
+    root = mkdtemp(template);
+    assert(root != NULL);
+
+    assert(snprintf(actual_sdcard, sizeof(actual_sdcard), "%s/sdcard-real", root) > 0);
+    assert(snprintf(linked_sdcard, sizeof(linked_sdcard), "%s/SDCARD", root) > 0);
+    assert(snprintf(roms_dir, sizeof(roms_dir), "%s/Roms", actual_sdcard) > 0);
+    assert(snprintf(bios_dir, sizeof(bios_dir), "%s/Bios", actual_sdcard) > 0);
+    assert(snprintf(saves_dir, sizeof(saves_dir), "%s/Saves", actual_sdcard) > 0);
+
+    make_dir(actual_sdcard);
+    make_dir(roms_dir);
+    make_dir(bios_dir);
+    make_dir(saves_dir);
+    assert(symlink(actual_sdcard, linked_sdcard) == 0);
+    assert(realpath(actual_sdcard, expected_root) != NULL);
+
+    setenv("SDCARD_PATH", linked_sdcard, 1);
+    unsetenv("CS_WEB_ROOT");
+
+    assert(cs_paths_init(&paths) == 0);
+    assert(strcmp(paths.sdcard_root, expected_root) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_FILES, NULL, "", &result) == 0);
+    assert(strcmp(result.root_path, expected_root) == 0);
+    assert(find_entry(&result, "Roms") != NULL);
+    assert(find_entry(&result, "Bios") != NULL);
+    assert(find_entry(&result, "Saves") != NULL);
+
+    assert(unlink(linked_sdcard) == 0);
+    assert(rmdir(saves_dir) == 0);
+    assert(rmdir(bios_dir) == 0);
+    assert(rmdir(roms_dir) == 0);
+    assert(rmdir(actual_sdcard) == 0);
+    assert(rmdir(root) == 0);
+}
+
 static void test_symlinked_roms_parent_is_rejected(void) {
     cs_paths paths = {0};
     cs_browser_result result = {0};
@@ -361,6 +408,7 @@ int main(void) {
     test_rom_thumbnail_resolution_is_png_only();
     test_symlink_entries_are_skipped();
     test_symlinked_scope_root_is_rejected();
+    test_symlinked_absolute_sdcard_root_is_canonicalized_for_files_scope();
     test_symlinked_roms_parent_is_rejected();
     test_large_listing_sets_truncated_flag();
     return 0;

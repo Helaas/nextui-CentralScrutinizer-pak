@@ -28,7 +28,7 @@ SRC_VENDOR := third_party/qrcodegen.c
 SRC_APP := src/main.c $(SRC_COMMON) $(SRC_SERVER) $(SRC_VENDOR)
 COMMON_INCLUDES := -Iinclude -Ithird_party/civetweb/include -I$(APOSTROPHE_DIR)/include -DUSE_WEBSOCKET
 
-.PHONY: all mac tg5040 tg5050 my355 package package-local package-tg5040 package-tg5050 package-my355 do-package deploy deploy-platform clean test-native web-install web-test web-build preview preview-clear-port update-apostrophe
+.PHONY: all mac tg5040 tg5050 my355 package package-local package-tg5040 package-tg5050 package-my355 do-package deploy deploy-platform clean test-native test-native-all test-smoke test-all web-install web-test web-build preview preview-clear-port update-apostrophe
 
 $(APOSTROPHE_DIR)/include/apostrophe.h:
 	git submodule update --init --checkout $(APOSTROPHE_DIR)
@@ -85,6 +85,23 @@ test-native:
 		$(TEST) $(SRC_COMMON) $(if $(TEST_SERVER),$(SRC_SERVER) $(SRC_VENDOR),) -lm -lpthread
 	@./$(BUILD_DIR)/tests/$(notdir $(TEST:.c=))
 	@echo "PASS $(TEST)"
+
+test-native-all:
+	@set -e; \
+	for test_file in tests/native/test_*.c; do \
+		echo "RUN native $$test_file"; \
+		$(MAKE) test-native TEST=$$test_file TEST_SERVER=1; \
+	done
+
+test-smoke:
+	@for script in tests/smoke/test_*.sh; do \
+		[ "$$(basename "$$script")" = "helpers.sh" ] || bash "$$script"; \
+	done
+
+test-all:
+	@$(MAKE) test-native-all
+	@$(MAKE) web-test
+	@$(MAKE) test-smoke
 
 web-install:
 	npm --prefix web ci

@@ -1,14 +1,33 @@
 #include "cs_paths.h"
 
-#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 static int write_value(char *dst, size_t size, const char *value, const char *fallback) {
     const char *source = (value != NULL && value[0] != '\0') ? value : fallback;
     int written = snprintf(dst, size, "%s", source);
 
     return (written < 0 || (size_t)written >= size) ? -1 : 0;
+}
+
+static int write_sdcard_root(char *dst, size_t size, const char *value, const char *fallback) {
+    const char *source = (value != NULL && value[0] != '\0') ? value : fallback;
+
+    if (!dst || size == 0 || !source) {
+        return -1;
+    }
+
+    if (source[0] == '/') {
+        char resolved[CS_PATH_MAX];
+
+        if (realpath(source, resolved) != NULL) {
+            source = resolved;
+        }
+    }
+
+    return write_value(dst, size, source, fallback);
 }
 
 static int write_joined(char *dst, size_t size, const char *prefix, const char *suffix) {
@@ -34,7 +53,7 @@ int cs_paths_init(cs_paths *paths) {
         default_web_root = "resources/web";
     }
 
-    if (write_value(temp.sdcard_root, sizeof(temp.sdcard_root), sd, "/mnt/SDCARD") != 0) {
+    if (write_sdcard_root(temp.sdcard_root, sizeof(temp.sdcard_root), sd, "/mnt/SDCARD") != 0) {
         return -1;
     }
     if (write_joined(temp.shared_state_root, sizeof(temp.shared_state_root), temp.sdcard_root, "/.userdata/shared/CentralScrutinizer") != 0) {

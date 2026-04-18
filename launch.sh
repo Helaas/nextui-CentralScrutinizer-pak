@@ -6,6 +6,41 @@ PAK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 cd "$PAK_DIR"
 
+SDCARD_ROOT=${SDCARD_PATH:-/mnt/SDCARD}
+export SDCARD_PATH="$SDCARD_ROOT"
+
+if [ -n "${PLATFORM:-}" ] && [ -z "${USERDATA_PATH:-}" ]; then
+    export USERDATA_PATH="$SDCARD_ROOT/.userdata/$PLATFORM"
+fi
+
+if [ -n "${PLATFORM:-}" ] && [ -z "${SYSTEM_PATH:-}" ]; then
+    export SYSTEM_PATH="$SDCARD_ROOT/.system/$PLATFORM"
+fi
+
+if [ -z "${SHARED_USERDATA_PATH:-}" ]; then
+    export SHARED_USERDATA_PATH="$SDCARD_ROOT/.userdata/shared"
+fi
+
+if [ -z "${ROMS_PATH:-}" ]; then
+    export ROMS_PATH="$SDCARD_ROOT/Roms"
+fi
+
+if [ -z "${SAVES_PATH:-}" ]; then
+    export SAVES_PATH="$SDCARD_ROOT/Saves"
+fi
+
+if [ -z "${BIOS_PATH:-}" ]; then
+    export BIOS_PATH="$SDCARD_ROOT/Bios"
+fi
+
+if [ -n "${SYSTEM_PATH:-}" ] && [ -z "${CORES_PATH:-}" ]; then
+    export CORES_PATH="$SYSTEM_PATH/cores"
+fi
+
+if [ -n "${USERDATA_PATH:-}" ] && [ -z "${LOGS_PATH:-}" ]; then
+    export LOGS_PATH="$USERDATA_PATH/logs"
+fi
+
 if [ -z "${CS_WEB_ROOT:-}" ] && [ -d "$PAK_DIR/resources/web" ]; then
     export CS_WEB_ROOT="$PAK_DIR/resources/web"
 fi
