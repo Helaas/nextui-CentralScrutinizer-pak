@@ -7,9 +7,11 @@ import { BrowserView } from "../components/browser-view";
 import { DashboardShell } from "../components/dashboard-shell";
 import { FileEditorModal } from "../components/file-editor-modal";
 import { LogsToolView } from "../components/logs-tool-view";
+import { MacDotCleanToolView } from "../components/mac-dot-clean-tool-view";
 import { PairScreen } from "../components/pair-screen";
 import { PlatformView } from "../components/platform-view";
 import { CollectionsToolView } from "../components/collections-tool-view";
+import { SaveStatesView } from "../components/save-states-view";
 import { ScreenshotsToolView } from "../components/screenshots-tool-view";
 import { TerminalToolView } from "../components/terminal-tool-view";
 import { ToolsView } from "../components/tools-view";
@@ -508,11 +510,9 @@ export default function Page() {
   }
 
   const activePlatform =
-    viewState.view === "platform"
+    viewState.view === "platform" || viewState.view === "states" || viewState.view === "browser"
       ? findPlatform(platformGroups, viewState.tag)
-      : viewState.view === "browser"
-        ? findPlatform(platformGroups, viewState.tag)
-        : undefined;
+      : undefined;
   const visiblePlatformGroups = filterPlatformGroups(
     platformGroups,
     searchByContext.library,
@@ -827,12 +827,23 @@ export default function Page() {
     if (viewState.view === "platform" && activePlatform) {
       return {
         destination: "library" as const,
-        description: `${activePlatform.counts.roms} ROMs, ${activePlatform.counts.saves} saves, ${activePlatform.counts.overlays} overlays, ${activePlatform.counts.cheats} cheats, BIOS ${activePlatform.bios.present}/${activePlatform.bios.required}.`,
+        description: `${activePlatform.counts.roms} ROMs, ${activePlatform.counts.saves} saves, ${activePlatform.counts.states} states, ${activePlatform.counts.bios} BIOS files, ${activePlatform.counts.overlays} overlays, ${activePlatform.counts.cheats} cheats.`,
         searchKey: "library" as const,
         searchPlaceholder: "Search platforms...",
         showPageHeader: true,
         showSearch: true,
         title: activePlatformDisplayName ?? activePlatform.name,
+      };
+    }
+    if (viewState.view === "states" && activePlatform) {
+      return {
+        destination: "library" as const,
+        description: "Download and remove grouped save-state bundles for the selected platform.",
+        searchKey: "library" as const,
+        searchPlaceholder: "Search platforms...",
+        showPageHeader: false,
+        showSearch: false,
+        title: "Save States",
       };
     }
     if (viewState.view === "browser") {
@@ -901,6 +912,17 @@ export default function Page() {
         title: "Screenshots",
       };
     }
+    if (viewState.view === "tools" && viewState.tool === "mac-dot-clean") {
+      return {
+        destination: "tools" as const,
+        description: "Scan and remove safe macOS transfer artifacts from the SD card.",
+        searchKey: "library" as const,
+        searchPlaceholder: "Search",
+        showPageHeader: false,
+        showSearch: false,
+        title: "Mac Dot Cleanup",
+      };
+    }
     if (viewState.view === "tools") {
       return {
         destination: "tools" as const,
@@ -932,8 +954,24 @@ export default function Page() {
         onBack={() => {
           navigate({ view: "dashboard", destination: "library" });
         }}
-        onOpenScope={(scope) => {
-          navigate({ view: "browser", destination: "library", scope, tag: activePlatform.tag });
+        onOpenResource={(resource) => {
+          if (resource === "states") {
+            navigate({ view: "states", destination: "library", tag: activePlatform.tag });
+            return;
+          }
+
+          navigate({ view: "browser", destination: "library", scope: resource, tag: activePlatform.tag });
+        }}
+        platform={activePlatform}
+      />
+    ) : viewState.view === "states" && activePlatform ? (
+      <SaveStatesView
+        csrf={session.csrf}
+        onBack={() => {
+          navigate({ view: "platform", destination: "library", tag: activePlatform.tag });
+        }}
+        onChanged={() => {
+          void loadPlatforms(session.csrf);
         }}
         platform={activePlatform}
       />
@@ -1043,6 +1081,13 @@ export default function Page() {
       <CollectionsToolView csrf={session.csrf} />
     ) : viewState.view === "tools" && viewState.tool === "screenshots" ? (
       <ScreenshotsToolView csrf={session.csrf} />
+    ) : viewState.view === "tools" && viewState.tool === "mac-dot-clean" ? (
+      <MacDotCleanToolView
+        csrf={session.csrf}
+        onBack={() => {
+          navigate({ view: "tools", destination: "tools" });
+        }}
+      />
     ) : viewState.view === "tools" ? (
       <ToolsView
         onOpenCollections={() => {
@@ -1053,6 +1098,9 @@ export default function Page() {
         }}
         onOpenLogs={() => {
           navigate({ view: "tools", destination: "tools", tool: "logs" });
+        }}
+        onOpenMacDotClean={() => {
+          navigate({ view: "tools", destination: "tools", tool: "mac-dot-clean" });
         }}
         onOpenScreenshots={() => {
           navigate({ view: "tools", destination: "tools", tool: "screenshots" });

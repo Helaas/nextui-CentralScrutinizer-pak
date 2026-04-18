@@ -3,10 +3,12 @@ import type {
   BrowserScope,
   FileSearchResponse,
   LogsResponse,
+  MacDotfilesResponse,
   MutationRequest,
   PlatformsResponse,
   ReplaceArtRequest,
   RenameRequest,
+  SaveStatesResponse,
   SessionResponse,
   StatusResponse,
   TerminalSessionResponse,
@@ -157,12 +159,28 @@ export async function getBrowser(scope: BrowserScope, csrf: string, tag?: string
   return expectJson<BrowserResponse>(response, "Browser lookup failed");
 }
 
+export async function getSaveStates(tag: string, csrf: string): Promise<SaveStatesResponse> {
+  const response = await fetch(`/api/states${toQuery({ tag })}`, {
+    headers: csrfHeaders(csrf),
+  });
+
+  return expectJson<SaveStatesResponse>(response, "Save-state lookup failed");
+}
+
 export async function getLogs(csrf: string): Promise<LogsResponse> {
   const response = await fetch("/api/logs", {
     headers: csrfHeaders(csrf),
   });
 
   return expectJson<LogsResponse>(response, "Logs lookup failed");
+}
+
+export async function getMacDotfiles(csrf: string): Promise<MacDotfilesResponse> {
+  const response = await fetch("/api/tools/mac-dotfiles", {
+    headers: csrfHeaders(csrf),
+  });
+
+  return expectJson<MacDotfilesResponse>(response, "Mac dotfile scan failed");
 }
 
 export async function searchFiles(path: string | undefined, query: string, csrf: string): Promise<FileSearchResponse> {

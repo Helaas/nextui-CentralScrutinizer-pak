@@ -1,8 +1,8 @@
 #include "cs_app.h"
-#include "cs_bios.h"
 #include "cs_library.h"
 #include "cs_platforms.h"
 #include "cs_server.h"
+#include "cs_states.h"
 
 #include "civetweb.h"
 
@@ -273,7 +273,7 @@ static int cs_stream_platform_object(struct mg_connection *conn,
     char bios_root[CS_PATH_MAX];
     char overlays_root[CS_PATH_MAX];
     char cheats_root[CS_PATH_MAX];
-    cs_bios_summary bios_summary = {0};
+    size_t state_count = 0;
     int rom_count = 0;
     int save_count = 0;
     int bios_count = 0;
@@ -289,6 +289,9 @@ static int cs_stream_platform_object(struct mg_connection *conn,
     if (cs_browser_root_for_scope(paths, CS_SCOPE_SAVES, platform, save_root, sizeof(save_root)) == 0) {
         save_count = cs_count_files_recursive(save_root, 0, 0);
     }
+    if (cs_states_collect(paths, platform, NULL, 0, &state_count, NULL) != 0) {
+        state_count = 0;
+    }
     if (cs_browser_root_for_scope(paths, CS_SCOPE_BIOS, platform, bios_root, sizeof(bios_root)) == 0) {
         bios_count = cs_count_files_recursive(bios_root, 0, 0);
     }
@@ -297,12 +300,6 @@ static int cs_stream_platform_object(struct mg_connection *conn,
     }
     if (cs_browser_root_for_scope(paths, CS_SCOPE_CHEATS, platform, cheats_root, sizeof(cheats_root)) == 0) {
         cheat_count = cs_count_files_recursive(cheats_root, 0, 0);
-    }
-    if (cs_bios_collect_requirements(paths, platform, NULL, 0, NULL, &bios_summary) != 0) {
-        memset(&bios_summary, 0, sizeof(bios_summary));
-    }
-    if (bios_summary.present_count > (size_t) bios_count) {
-        bios_count = (int) bios_summary.present_count;
     }
 
     if (!*first_platform && cs_stream_literal(conn, ",") != 0) {
@@ -328,18 +325,14 @@ static int cs_stream_platform_object(struct mg_connection *conn,
         || cs_stream_unsigned(conn, (unsigned long long) rom_count) != 0
         || cs_stream_literal(conn, ",\"saves\":") != 0
         || cs_stream_unsigned(conn, (unsigned long long) save_count) != 0
+        || cs_stream_literal(conn, ",\"states\":") != 0
+        || cs_stream_unsigned(conn, (unsigned long long) state_count) != 0
         || cs_stream_literal(conn, ",\"bios\":") != 0
         || cs_stream_unsigned(conn, (unsigned long long) bios_count) != 0
         || cs_stream_literal(conn, ",\"overlays\":") != 0
         || cs_stream_unsigned(conn, (unsigned long long) overlay_count) != 0
         || cs_stream_literal(conn, ",\"cheats\":") != 0
         || cs_stream_unsigned(conn, (unsigned long long) cheat_count) != 0
-        || cs_stream_literal(conn, "},\"bios\":{\"required\":") != 0
-        || cs_stream_unsigned(conn, (unsigned long long) bios_summary.required_count) != 0
-        || cs_stream_literal(conn, ",\"present\":") != 0
-        || cs_stream_unsigned(conn, (unsigned long long) bios_summary.present_count) != 0
-        || cs_stream_literal(conn, ",\"satisfied\":") != 0
-        || cs_stream_literal(conn, bios_summary.satisfied ? "true" : "false") != 0
         || cs_stream_literal(conn, "}}") != 0) {
         return -1;
     }
@@ -427,9 +420,6 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
     cs_platform_info resolved_platform = {0};
     const cs_platform_info *platform = NULL;
     cs_browser_result *result = NULL;
-    cs_bios_requirement *bios_requirements = NULL;
-    cs_bios_summary bios_summary = {0};
-    size_t bios_count = 0;
     size_t i;
     int first_entry = 1;
     int guard_status;
@@ -469,35 +459,18 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
     }
 
     result = (cs_browser_result *) calloc(1, sizeof(*result));
-    bios_requirements =
-        (cs_bios_requirement *) calloc(CS_BIOS_MAX_REQUIREMENTS, sizeof(*bios_requirements));
-    if (!result || !bios_requirements) {
+    if (!result) {
         free(result);
-        free(bios_requirements);
         return cs_write_json(conn, 500, "Internal Server Error", "{\"error\":\"alloc_failed\"}");
     }
 
     if (cs_browser_list(&app->paths, scope, platform, path_value, result) != 0) {
         free(result);
-        free(bios_requirements);
         return cs_write_json(conn, 404, "Not Found", "{\"error\":\"path_not_found\"}");
-    }
-    if (scope == CS_SCOPE_BIOS && platform) {
-        if (cs_bios_collect_requirements(&app->paths,
-                                         platform,
-                                         bios_requirements,
-                                         CS_BIOS_MAX_REQUIREMENTS,
-                                         &bios_count,
-                                         &bios_summary)
-            != 0) {
-            bios_count = 0;
-            memset(&bios_summary, 0, sizeof(bios_summary));
-        }
     }
 
     if (cs_stream_begin_json_response(conn) != 0) {
         free(result);
-        free(bios_requirements);
         return 1;
     }
     if (cs_stream_literal(conn, "{\"scope\":\"") != 0
@@ -533,52 +506,15 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
         || cs_stream_literal(conn, result->truncated ? "true" : "false") != 0) {
         goto stream_fail;
     }
-    if (scope == CS_SCOPE_BIOS) {
-        int first_requirement = 1;
-
-        if (cs_stream_literal(conn, ",\"biosSummary\":{\"required\":") != 0
-            || cs_stream_unsigned(conn, (unsigned long long) bios_summary.required_count) != 0
-            || cs_stream_literal(conn, ",\"present\":") != 0
-            || cs_stream_unsigned(conn, (unsigned long long) bios_summary.present_count) != 0
-            || cs_stream_literal(conn, ",\"satisfied\":") != 0
-            || cs_stream_literal(conn, bios_summary.satisfied ? "true" : "false") != 0
-            || cs_stream_literal(conn, "},\"biosRequirements\":[") != 0) {
-            goto stream_fail;
-        }
-        for (i = 0; i < bios_count && i < CS_BIOS_MAX_REQUIREMENTS; ++i) {
-            if (!first_requirement && cs_stream_literal(conn, ",") != 0) {
-                goto stream_fail;
-            }
-            if (cs_stream_literal(conn, "{\"label\":\"") != 0
-                || cs_stream_escaped_string(conn, bios_requirements[i].label) != 0
-                || cs_stream_literal(conn, "\",\"fileName\":\"") != 0
-                || cs_stream_escaped_string(conn, bios_requirements[i].file_name) != 0
-                || cs_stream_literal(conn, "\",\"path\":\"") != 0
-                || cs_stream_escaped_string(conn, bios_requirements[i].path) != 0
-                || cs_stream_literal(conn, "\",\"status\":\"") != 0
-                || cs_stream_escaped_string(conn, bios_requirements[i].status) != 0
-                || cs_stream_literal(conn, "\",\"required\":") != 0
-                || cs_stream_literal(conn, bios_requirements[i].required ? "true" : "false") != 0
-                || cs_stream_literal(conn, "}") != 0) {
-                goto stream_fail;
-            }
-            first_requirement = 0;
-        }
-        if (cs_stream_literal(conn, "]") != 0) {
-            goto stream_fail;
-        }
-    }
     if (cs_stream_literal(conn, "}") != 0 || mg_send_chunk(conn, "", 0) < 0) {
         goto stream_fail;
     }
 
     free(result);
-    free(bios_requirements);
     return 1;
 
 stream_fail:
     free(result);
-    free(bios_requirements);
     (void) mg_send_chunk(conn, "", 0);
     return 1;
 }

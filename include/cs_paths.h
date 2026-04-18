@@ -5,6 +5,7 @@
 
 typedef struct cs_paths {
     char sdcard_root[CS_PATH_MAX];
+    char shared_userdata_root[CS_PATH_MAX];
     char shared_state_root[CS_PATH_MAX];
     char web_root[CS_PATH_MAX];
     char roms_root[CS_PATH_MAX];

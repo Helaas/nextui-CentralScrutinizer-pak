@@ -56,7 +56,14 @@ int cs_paths_init(cs_paths *paths) {
     if (write_sdcard_root(temp.sdcard_root, sizeof(temp.sdcard_root), sd, "/mnt/SDCARD") != 0) {
         return -1;
     }
-    if (write_joined(temp.shared_state_root, sizeof(temp.shared_state_root), temp.sdcard_root, "/.userdata/shared/CentralScrutinizer") != 0) {
+    if (write_joined(temp.shared_userdata_root, sizeof(temp.shared_userdata_root), temp.sdcard_root, "/.userdata/shared") != 0) {
+        return -1;
+    }
+    if (write_joined(temp.shared_state_root,
+                     sizeof(temp.shared_state_root),
+                     temp.shared_userdata_root,
+                     "/CentralScrutinizer")
+        != 0) {
         return -1;
     }
     if (write_joined(temp.roms_root, sizeof(temp.roms_root), temp.sdcard_root, "/Roms") != 0) {

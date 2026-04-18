@@ -13,7 +13,9 @@ const mockApi = vi.hoisted(() => ({
   createFolder: vi.fn(),
   deleteItem: vi.fn(),
   getBrowser: vi.fn(),
+  getMacDotfiles: vi.fn(),
   getPlatforms: vi.fn(),
+  getSaveStates: vi.fn(),
   getSession: vi.fn(),
   pairBrowser: vi.fn(),
   pairBrowserQr: vi.fn(),
@@ -39,6 +41,26 @@ vi.mock("../components/terminal-tool-view", () => ({
   TerminalToolView: ({ enabled, onBack }: { enabled: boolean; onBack: () => void }) => (
     <div>
       <p>{enabled ? "Mock terminal enabled" : "Mock terminal disabled"}</p>
+      <button onClick={onBack} type="button">
+        Back
+      </button>
+    </div>
+  ),
+}));
+vi.mock("../components/save-states-view", () => ({
+  SaveStatesView: ({ onBack, platform }: { onBack: () => void; platform: { name: string } }) => (
+    <div>
+      <p>Mock save states for {platform.name}</p>
+      <button onClick={onBack} type="button">
+        Back
+      </button>
+    </div>
+  ),
+}));
+vi.mock("../components/mac-dot-clean-tool-view", () => ({
+  MacDotCleanToolView: ({ onBack }: { onBack: () => void }) => (
+    <div>
+      <p>Mock Mac Dot Cleanup</p>
       <button onClick={onBack} type="button">
         Back
       </button>
@@ -78,8 +100,7 @@ function platformGroups() {
             romPath: "Roms/Game Boy Advance (GBA)",
             savePath: "Saves/GBA",
             biosPath: "Bios/GBA",
-            counts: { roms: 2, saves: 1, bios: 0, overlays: 0, cheats: 0 },
-            bios: { required: 1, present: 0, satisfied: false },
+            counts: { roms: 2, saves: 1, states: 3, bios: 0, overlays: 0, cheats: 0 },
           },
         ],
       },
@@ -102,8 +123,7 @@ function duplicatePlatformGroups() {
             romPath: "Roms/Game Boy Advance (GBA)",
             savePath: "Saves/GBA",
             biosPath: "Bios/GBA",
-            counts: { roms: 2, saves: 1, bios: 0, overlays: 0, cheats: 0 },
-            bios: { required: 1, present: 0, satisfied: false },
+            counts: { roms: 2, saves: 1, states: 0, bios: 0, overlays: 0, cheats: 0 },
           },
           {
             tag: "MGBA",
@@ -114,8 +134,7 @@ function duplicatePlatformGroups() {
             romPath: "Roms/Game Boy Advance (MGBA)",
             savePath: "Saves/MGBA",
             biosPath: "Bios/MGBA",
-            counts: { roms: 1, saves: 0, bios: 0, overlays: 0, cheats: 0 },
-            bios: { required: 1, present: 0, satisfied: false },
+            counts: { roms: 1, saves: 0, states: 0, bios: 0, overlays: 0, cheats: 0 },
           },
         ],
       },
@@ -279,6 +298,20 @@ describe("Page", () => {
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
 
+  it("navigates into the dedicated save-states view", async () => {
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+
+    render(<Page />);
+
+    expect(await screen.findByText("Game Boy Advance")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Game Boy Advance/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Save States/i }));
+
+    expect(await screen.findByText("Mock save states for Game Boy Advance")).toBeTruthy();
+    expect(window.location.search).toBe("?view=states&tag=GBA");
+  });
+
   it("keeps duplicate platform variants distinct in the library and header", async () => {
     mockApi.getSession.mockResolvedValue(pairedSession());
     mockApi.getPlatforms.mockResolvedValue(duplicatePlatformGroups());
@@ -304,9 +337,23 @@ describe("Page", () => {
 
     fireEvent.click(within(primaryNav).getByRole("button", { name: "Tools" }));
     expect(await screen.findByRole("button", { name: /File Browser/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Mac Dot Cleanup/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Log Viewer/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Terminal/ })).toHaveProperty("disabled", true);
     expect(screen.getByText(/Enable on handheld/i)).toBeTruthy();
+  });
+
+  it("opens the Mac Dot Cleanup tool from the tools workspace", async () => {
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+
+    render(<Page />);
+
+    await openTools();
+    fireEvent.click(await screen.findByRole("button", { name: /Mac Dot Cleanup/ }));
+
+    expect(await screen.findByText("Mock Mac Dot Cleanup")).toBeTruthy();
+    expect(window.location.search).toBe("?view=tools&tool=mac-dot-clean");
   });
 
   it("syncs the tools workspace from the url and popstate history", async () => {

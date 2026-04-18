@@ -34,6 +34,7 @@ function ToolCard({
 
 export function ToolsView({
   onOpenCollections,
+  onOpenMacDotClean,
   terminalEnabled,
   onOpenScreenshots,
   onOpenFileBrowser,
@@ -41,6 +42,7 @@ export function ToolsView({
   onOpenTerminal,
 }: {
   onOpenCollections: () => void;
+  onOpenMacDotClean: () => void;
   terminalEnabled: boolean;
   onOpenScreenshots: () => void;
   onOpenFileBrowser: () => void;
@@ -72,6 +74,11 @@ export function ToolsView({
           description="Browse screenshots, preview them, delete them, or download a zip archive."
           onClick={onOpenScreenshots}
           title="Screenshots"
+        />
+        <ToolCard
+          description="Scan for safe macOS transfer artifacts like .DS_Store, ._ sidecars, and __MACOSX folders."
+          onClick={onOpenMacDotClean}
+          title="Mac Dot Cleanup"
         />
         <ToolCard
           description="Scan .userdata for logs, download them, and follow output live."

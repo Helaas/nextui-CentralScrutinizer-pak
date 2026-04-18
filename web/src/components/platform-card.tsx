@@ -26,8 +26,7 @@ export function PlatformCard({
       <div className="min-w-0 flex-1">
         <p className="truncate font-semibold group-hover:text-[var(--accent)]">{displayName}</p>
         <p className="mt-1 text-xs text-[var(--muted)]">
-          {platform.counts.roms} ROMs · {platform.counts.saves} Saves · BIOS{" "}
-          {platform.bios.present}/{platform.bios.required}
+          {platform.counts.roms} ROMs · {platform.counts.saves} Saves · {platform.counts.states} States · {platform.counts.bios} BIOS
         </p>
       </div>
     </button>

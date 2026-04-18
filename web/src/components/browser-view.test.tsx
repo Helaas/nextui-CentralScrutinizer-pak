@@ -25,7 +25,7 @@ describe("BrowserView", () => {
     window.history.replaceState(null, "", "/");
   });
 
-  it("renders bios requirements inside the library browser without selection UI", () => {
+  it("renders the bios browser without the legacy status panel", () => {
     render(
       <BrowserView
         notice="Uploaded 1 file."
@@ -56,16 +56,6 @@ describe("BrowserView", () => {
               thumbnailPath: "",
             },
           ],
-          biosSummary: { required: 1, present: 1, satisfied: true },
-          biosRequirements: [
-            {
-              label: "System BIOS",
-              fileName: "scph1001.bin",
-              path: "PS/scph1001.bin",
-              status: "present",
-              required: true,
-            },
-          ],
         }}
         scope="bios"
         transfer={{ active: false, label: "", progress: 0 }}
@@ -73,7 +63,6 @@ describe("BrowserView", () => {
     );
 
     expect(screen.getByText("Uploaded 1 file.")).toBeTruthy();
-    expect(screen.getByText("BIOS Status")).toBeTruthy();
     expect(screen.getByRole("navigation", { name: "Library path" })).toBeTruthy();
     expect(screen.getByPlaceholderText("Search in current folder")).toBeTruthy();
     expect(screen.queryByRole("checkbox")).toBeNull();
@@ -81,6 +70,7 @@ describe("BrowserView", () => {
     expect(screen.getByRole("button", { name: "More actions for scph1001.bin" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Upload Folder" })).toBeNull();
     expect(screen.queryByRole("button", { name: "New Folder" })).toBeNull();
+    expect(screen.queryByText("BIOS Status")).toBeNull();
   });
 
   it("filters library browser entries using the local search value", () => {

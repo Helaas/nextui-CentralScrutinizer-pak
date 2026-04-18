@@ -10,7 +10,6 @@ import type {
 } from "../lib/types";
 import { BrowserFilesToolbar } from "./browser-files-toolbar";
 import { BrowserWorkspaceCard } from "./browser-workspace-card";
-import { BiosStatusPanel } from "./bios-status-panel";
 import { BrowserTable } from "./browser-table";
 import { TransferBar } from "./transfer-bar";
 
@@ -176,9 +175,6 @@ export function BrowserView({
         <div className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)]">
           {notice}
         </div>
-      ) : null}
-      {scope === "bios" ? (
-        <BiosStatusPanel requirements={response.biosRequirements ?? []} summary={response.biosSummary} />
       ) : null}
       {isFiles && searchResults ? (
         <section className="rounded-[24px] border border-[var(--border)] bg-[var(--panel)] px-5 py-4">

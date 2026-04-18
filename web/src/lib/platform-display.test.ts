@@ -17,8 +17,7 @@ function buildGroups(): PlatformGroup[] {
           romPath: "Roms/Game Boy Advance (GBA)",
           savePath: "Saves/GBA",
           biosPath: "Bios/GBA",
-          counts: { roms: 2, saves: 1, bios: 0, overlays: 0, cheats: 0 },
-          bios: { required: 1, present: 0, satisfied: false },
+          counts: { roms: 2, saves: 1, states: 0, bios: 0, overlays: 0, cheats: 0 },
         },
         {
           tag: "MGBA",
@@ -29,8 +28,7 @@ function buildGroups(): PlatformGroup[] {
           romPath: "Roms/Game Boy Advance (MGBA)",
           savePath: "Saves/MGBA",
           biosPath: "Bios/MGBA",
-          counts: { roms: 0, saves: 0, bios: 0, overlays: 0, cheats: 0 },
-          bios: { required: 1, present: 0, satisfied: false },
+          counts: { roms: 0, saves: 0, states: 0, bios: 0, overlays: 0, cheats: 0 },
         },
       ],
     },
@@ -46,8 +44,7 @@ function buildGroups(): PlatformGroup[] {
           romPath: "Roms/Atari 5200 (A5200)",
           savePath: "Saves/A5200",
           biosPath: "Bios/A5200",
-          counts: { roms: 0, saves: 0, bios: 1, overlays: 0, cheats: 0 },
-          bios: { required: 1, present: 1, satisfied: true },
+          counts: { roms: 0, saves: 0, states: 0, bios: 1, overlays: 0, cheats: 0 },
         },
         {
           tag: "LYNX",
@@ -58,8 +55,7 @@ function buildGroups(): PlatformGroup[] {
           romPath: "Roms/Atari Lynx (LYNX)",
           savePath: "Saves/LYNX",
           biosPath: "Bios/LYNX",
-          counts: { roms: 0, saves: 2, bios: 0, overlays: 1, cheats: 0 },
-          bios: { required: 0, present: 0, satisfied: true },
+          counts: { roms: 0, saves: 2, states: 0, bios: 0, overlays: 1, cheats: 0 },
         },
       ],
     },
@@ -75,8 +71,7 @@ function buildGroups(): PlatformGroup[] {
           romPath: "Roms/Amiga (PUAE)",
           savePath: "Saves/PUAE",
           biosPath: "Bios/PUAE",
-          counts: { roms: 0, saves: 0, bios: 1, overlays: 0, cheats: 0 },
-          bios: { required: 0, present: 0, satisfied: true },
+          counts: { roms: 0, saves: 0, states: 0, bios: 1, overlays: 0, cheats: 0 },
         },
       ],
     },
@@ -96,18 +91,19 @@ describe("platform-display", () => {
     const visibleGroups = filterPlatformGroups(buildGroups(), "", false);
     const displayNames = createPlatformDisplayNames(flattenPlatformGroups(visibleGroups));
 
-    expect(flattenPlatformGroups(visibleGroups)).toHaveLength(3);
+    expect(flattenPlatformGroups(visibleGroups)).toHaveLength(4);
     expect(displayNames.get("GBA")).toBe("Game Boy Advance");
     expect(displayNames.has("MGBA")).toBe(false);
     expect(displayNames.get("A5200")).toBe("Atari 5200");
     expect(displayNames.get("LYNX")).toBe("Atari Lynx");
+    expect(displayNames.get("PUAE")).toBe("Amiga");
   });
 
-  it("hides platforms with only unrecognized bios files when show empty is off", () => {
+  it("keeps platforms with plain BIOS files when show empty is off", () => {
     const visibleGroups = filterPlatformGroups(buildGroups(), "", false);
     const visibleTags = flattenPlatformGroups(visibleGroups).map((platform) => platform.tag);
 
-    expect(visibleTags).not.toContain("PUAE");
+    expect(visibleTags).toContain("PUAE");
   });
 
   it("matches searches against the visible duplicate label", () => {

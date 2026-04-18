@@ -62,12 +62,12 @@ CSRF_TOKEN="$(printf '%s' "$SESSION_RESPONSE" | sed -n 's/.*"csrf":"\([^"]*\)".*
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms | grep -Fq '"tag":"GBA"'
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms | grep -Fq '"name":"Game Boy Advance"'
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms | grep -Fq '"group":"Nintendo"'
-curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms | grep -Fq '"counts":{"roms":1,"saves":1,"bios":1,"overlays":0,"cheats":0}'
+curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms | grep -Fq '"counts":{"roms":1,"saves":1,"states":5,"bios":1,"overlays":0,"cheats":0}'
 
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=roms&tag=GBA' | grep -Fq "\"name\":\"$ROM_NAME\""
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=roms&tag=GBA' | grep -Fq "\"thumbnailPath\":\".media/$ROM_BASE.png\""
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=saves&tag=GBA' | grep -Fq '"name":"Pokemon Emerald.sav"'
-curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=bios&tag=PS' | grep -Fq '"fileName":"scph1001.bin"'
+curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=bios&tag=PS' | grep -Fq '"name":"scph1001.bin"'
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=files' | grep -Fq '"name":".userdata"'
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=files' | grep -Fq '"name":"Roms"'
 

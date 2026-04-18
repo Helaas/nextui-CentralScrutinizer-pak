@@ -13,20 +13,6 @@ export type StatusResponse = {
   trustedCount: number;
 };
 
-export type BiosSummary = {
-  required: number;
-  present: number;
-  satisfied: boolean;
-};
-
-export type BiosRequirement = {
-  label: string;
-  fileName: string;
-  path: string;
-  status: string;
-  required: boolean;
-};
-
 export type PlatformSummary = {
   tag: string;
   name: string;
@@ -39,11 +25,11 @@ export type PlatformSummary = {
   counts: {
     roms: number;
     saves: number;
+    states: number;
     bios: number;
     overlays: number;
     cheats: number;
   };
-  bios: BiosSummary;
 };
 
 export type PlatformGroup = {
@@ -80,8 +66,31 @@ export type BrowserResponse = {
   breadcrumbs: Breadcrumb[];
   entries: BrowserEntry[];
   truncated: boolean;
-  biosSummary?: BiosSummary;
-  biosRequirements?: BiosRequirement[];
+};
+
+export type SaveStateEntry = {
+  id: string;
+  title: string;
+  coreDir: string;
+  slot: number;
+  slotLabel: string;
+  kind: string;
+  format: string;
+  modified: number;
+  size: number;
+  previewPath: string;
+  downloadPaths: string[];
+  deletePaths: string[];
+  warnings: string[];
+};
+
+export type SaveStatesResponse = {
+  platformTag: string;
+  platformName: string;
+  emuCode: string;
+  count: number;
+  truncated: boolean;
+  entries: SaveStateEntry[];
 };
 
 export type UploadRequest = {
@@ -117,7 +126,13 @@ export type WriteRequest = {
   content: string;
 };
 
-export type ToolKey = "file-browser" | "logs" | "terminal" | "collections" | "screenshots";
+export type ToolKey =
+  | "file-browser"
+  | "logs"
+  | "terminal"
+  | "collections"
+  | "screenshots"
+  | "mac-dot-clean";
 
 export type LogFileSummary = {
   path: string;
@@ -128,6 +143,20 @@ export type LogFileSummary = {
 export type LogsResponse = {
   root: string;
   files: LogFileSummary[];
+};
+
+export type MacDotfileEntry = {
+  path: string;
+  kind: string;
+  reason: string;
+  size: number;
+  modified: number;
+};
+
+export type MacDotfilesResponse = {
+  count: number;
+  truncated: boolean;
+  entries: MacDotfileEntry[];
 };
 
 export type TerminalSessionResponse = {

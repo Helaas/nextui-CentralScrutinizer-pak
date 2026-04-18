@@ -10,6 +10,7 @@
 
 static void assert_default_paths(const cs_paths *paths) {
     assert(strcmp(paths->sdcard_root, "/mnt/SDCARD") == 0);
+    assert(strcmp(paths->shared_userdata_root, "/mnt/SDCARD/.userdata/shared") == 0);
     assert(strcmp(paths->shared_state_root, "/mnt/SDCARD/.userdata/shared/CentralScrutinizer") == 0);
     assert(strcmp(paths->web_root, "web/out") == 0);
     assert(strcmp(paths->roms_root, "/mnt/SDCARD/Roms") == 0);
@@ -20,6 +21,7 @@ static void assert_default_paths(const cs_paths *paths) {
 
 static void assert_fixture_paths(const cs_paths *paths) {
     assert(strcmp(paths->sdcard_root, "fixtures/mock_sdcard") == 0);
+    assert(strcmp(paths->shared_userdata_root, "fixtures/mock_sdcard/.userdata/shared") == 0);
     assert(strcmp(paths->shared_state_root, "fixtures/mock_sdcard/.userdata/shared/CentralScrutinizer") == 0);
     assert(strcmp(paths->web_root, "custom/web/root") == 0);
     assert(strcmp(paths->roms_root, "fixtures/mock_sdcard/Roms") == 0);
@@ -95,6 +97,7 @@ int main(void) {
     fill_sentinel(&paths);
     assert(cs_paths_init(&paths) == 0);
     assert(strcmp(paths.sdcard_root, "/mnt/sdcard") == 0);
+    assert(strcmp(paths.shared_userdata_root, "/mnt/sdcard/.userdata/shared") == 0);
     assert(strcmp(paths.shared_state_root, "/mnt/sdcard/.userdata/shared/CentralScrutinizer") == 0);
 
     setenv("SDCARD_PATH", "/definitely/missing/sdcard", 1);

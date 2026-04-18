@@ -14,6 +14,7 @@ describe("ToolsView", () => {
         onOpenCollections={vi.fn()}
         onOpenFileBrowser={vi.fn()}
         onOpenLogs={vi.fn()}
+        onOpenMacDotClean={vi.fn()}
         onOpenScreenshots={vi.fn()}
         onOpenTerminal={vi.fn()}
         terminalEnabled={false}
@@ -29,6 +30,7 @@ describe("ToolsView", () => {
     const onOpenCollections = vi.fn();
     const onOpenFileBrowser = vi.fn();
     const onOpenLogs = vi.fn();
+    const onOpenMacDotClean = vi.fn();
     const onOpenScreenshots = vi.fn();
     const onOpenTerminal = vi.fn();
 
@@ -37,6 +39,7 @@ describe("ToolsView", () => {
         onOpenCollections={onOpenCollections}
         onOpenFileBrowser={onOpenFileBrowser}
         onOpenLogs={onOpenLogs}
+        onOpenMacDotClean={onOpenMacDotClean}
         onOpenScreenshots={onOpenScreenshots}
         onOpenTerminal={onOpenTerminal}
         terminalEnabled
@@ -46,12 +49,14 @@ describe("ToolsView", () => {
     fireEvent.click(screen.getByRole("button", { name: /File Browser/ }));
     fireEvent.click(screen.getByRole("button", { name: /Collections/ }));
     fireEvent.click(screen.getByRole("button", { name: /Screenshots/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Mac Dot Cleanup/ }));
     fireEvent.click(screen.getByRole("button", { name: /Log Viewer/ }));
     fireEvent.click(screen.getByRole("button", { name: /Terminal/ }));
 
     expect(onOpenFileBrowser).toHaveBeenCalledTimes(1);
     expect(onOpenCollections).toHaveBeenCalledTimes(1);
     expect(onOpenScreenshots).toHaveBeenCalledTimes(1);
+    expect(onOpenMacDotClean).toHaveBeenCalledTimes(1);
     expect(onOpenLogs).toHaveBeenCalledTimes(1);
     expect(onOpenTerminal).toHaveBeenCalledTimes(1);
   });

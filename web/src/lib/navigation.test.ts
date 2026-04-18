@@ -10,6 +10,11 @@ describe("navigation", () => {
       tool: "file-browser",
       path: "Roms",
     });
+    expect(readViewState("?view=states&tag=GBA")).toEqual({
+      view: "states",
+      destination: "library",
+      tag: "GBA",
+    });
     expect(readViewState("?view=tools&tool=logs&path=.userdata/logs/app.log")).toEqual({
       view: "tools",
       destination: "tools",
@@ -24,6 +29,7 @@ describe("navigation", () => {
       "?view=dashboard&showEmpty=1",
     );
     expect(writeViewState({ view: "tools", destination: "tools" })).toBe("?view=tools");
+    expect(writeViewState({ view: "states", destination: "library", tag: "GBA" })).toBe("?view=states&tag=GBA");
     expect(writeViewState({ view: "tools", destination: "tools", tool: "file-browser", path: "Roms" })).toBe(
       "?view=tools&tool=file-browser&path=Roms",
     );
@@ -33,11 +39,15 @@ describe("navigation", () => {
     expect(writeViewState({ view: "tools", destination: "tools", tool: "collections" })).toBe(
       "?view=tools&tool=collections",
     );
+    expect(writeViewState({ view: "tools", destination: "tools", tool: "mac-dot-clean" })).toBe(
+      "?view=tools&tool=mac-dot-clean",
+    );
   });
 
   it("derives library destination from nested library views", () => {
     expect(getDestination({ view: "pair" })).toBe(null);
     expect(getDestination({ view: "platform", destination: "library", tag: "GBA" })).toBe("library");
+    expect(getDestination({ view: "states", destination: "library", tag: "GBA" })).toBe("library");
     expect(
       getDestination({
         view: "browser",

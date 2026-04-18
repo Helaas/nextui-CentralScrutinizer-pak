@@ -1,18 +1,19 @@
 # The Central Scrutinizer
 
-The Central Scrutinizer is a device-hosted web manager for NextUI handhelds. Launch it on your device, open the URL shown on screen from a phone, tablet, or computer on the same network, and manage your ROM library, artwork, BIOS files, collections, screenshots, logs, and more from a modern browser.
+The Central Scrutinizer is a device-hosted web manager for NextUI handhelds. Launch it on your device, open the URL shown on screen from a phone, tablet, or computer on the same network, and manage your ROM library, save states, artwork, BIOS files, collections, screenshots, logs, and more from a modern browser.
 
 It runs an HTTP server only while the pak is open. Quit the pak on the handheld to stop access.
 
 ## What It Does
 
 - Shows your library grouped by platform family with dedicated console icons
-- Lets you browse ROMs, saves, BIOS, overlays, and cheats by system
+- Lets you browse ROMs, saves, save states, BIOS, overlays, and cheats by system
 - Supports file upload, folder upload, folder creation, rename, delete, and plaintext file editing
 - Lets you replace ROM artwork from the browser
 - Includes a full SD card file browser workspace
 - Includes collection management for `Collections/*.txt` playlists and collection artwork
 - Includes a screenshot browser with preview, delete, and bulk zip download
+- Includes a Mac dot-cleanup tool for removing safe Finder and archive artifacts from the SD card
 - Includes a log viewer with live tail and bulk log download
 - Includes optional browser terminal access when enabled on the handheld
 
@@ -64,14 +65,14 @@ After pairing, the browser becomes a trusted client until you revoke trusted bro
 
 ### Library
 
-The Library view groups systems by family and shows counts for ROMs, saves, and required BIOS files.
+The Library view groups systems by family and shows counts for ROMs, saves, save states, BIOS files, overlays, and cheats.
 
 From the library and per-system workspaces you can:
 
 - Browse ROM folders
 - Download files directly
 - Replace ROM artwork with PNG images
-- Inspect saves, BIOS, overlays, and cheats
+- Inspect saves, save states, BIOS, overlays, and cheats
 - Search platforms and folder contents
 - Hide or show empty platforms
 
@@ -82,6 +83,7 @@ The Tools workspace includes:
 - **File Browser**: browse the SD card, upload files or folders, create folders, rename items, delete items, and edit plaintext files
 - **Collections**: create and edit `Collections/*.txt` playlists, reorder ROM paths, and manage collection icons/backgrounds
 - **Screenshots**: preview images from `Screenshots/`, delete them, or download all screenshots as a zip
+- **Mac Dot Cleanup**: scan for `.DS_Store`, `._*`, `__MACOSX`, and top-level macOS transfer folders, then delete them in one pass
 - **Log Viewer**: browse logs under `.userdata`, live-tail a log file, and download one or all logs
 - **Terminal**: open a real shell in the browser if terminal access has been enabled on the handheld
 

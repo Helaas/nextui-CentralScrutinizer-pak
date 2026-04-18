@@ -55,6 +55,7 @@ int cs_route_pair_qr_handler(struct mg_connection *conn, void *cbdata);
 int cs_route_revoke_handler(struct mg_connection *conn, void *cbdata);
 int cs_route_platforms_handler(struct mg_connection *conn, void *cbdata);
 int cs_route_browser_handler(struct mg_connection *conn, void *cbdata);
+int cs_route_states_handler(struct mg_connection *conn, void *cbdata);
 int cs_route_logs_handler(struct mg_connection *conn, void *cbdata);
 int cs_route_logs_download_handler(struct mg_connection *conn, void *cbdata);
 int cs_route_logs_tail_handler(struct mg_connection *conn, void *cbdata);
@@ -66,6 +67,7 @@ int cs_route_download_handler(struct mg_connection *conn, void *cbdata);
 int cs_route_replace_art_handler(struct mg_connection *conn, void *cbdata);
 int cs_route_write_handler(struct mg_connection *conn, void *cbdata);
 int cs_route_file_search_handler(struct mg_connection *conn, void *cbdata);
+int cs_route_mac_dotfiles_handler(struct mg_connection *conn, void *cbdata);
 static int cs_server_randomize_pairing_code_locked(void);
 static int cs_server_reset_pairing_code_locked(void);
 static int cs_server_advance_pairing_code_locked(void);
@@ -132,6 +134,9 @@ static int cs_server_begin_request(struct mg_connection *conn) {
     if (strcmp(uri, "/api/browser") == 0) {
         return cs_route_browser_handler(conn, app);
     }
+    if (strcmp(uri, "/api/states") == 0) {
+        return cs_route_states_handler(conn, app);
+    }
     if (strcmp(uri, "/api/logs") == 0) {
         return cs_route_logs_handler(conn, app);
     }
@@ -164,6 +169,9 @@ static int cs_server_begin_request(struct mg_connection *conn) {
     }
     if (strcmp(uri, "/api/item/write") == 0) {
         return cs_route_write_handler(conn, app);
+    }
+    if (strcmp(uri, "/api/tools/mac-dotfiles") == 0) {
+        return cs_route_mac_dotfiles_handler(conn, app);
     }
     if (strcmp(uri, "/api/terminal/session") == 0 || strcmp(uri, "/api/terminal/socket") == 0) {
         return strcmp(uri, "/api/terminal/session") == 0 ? cs_terminal_route_session_handler(conn, app) : 0;

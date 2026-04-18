@@ -6,6 +6,7 @@ export type AppViewState =
   | { view: "pair" }
   | { view: "dashboard"; destination: "library" }
   | { view: "platform"; destination: "library"; tag: string }
+  | { view: "states"; destination: "library"; tag: string }
   | {
       view: "browser";
       destination: "library";
@@ -39,6 +40,9 @@ export function readViewState(search: string): AppViewState {
   if (view === "platform" && tag) {
     return { view: "platform", destination: "library", tag };
   }
+  if (view === "states" && tag) {
+    return { view: "states", destination: "library", tag };
+  }
   if (view === "browser" && tag && scope && scope !== "files") {
     return { view: "browser", destination: "library", scope, tag, path };
   }
@@ -51,7 +55,7 @@ export function readViewState(search: string): AppViewState {
     if (tool === "file-browser" || tool === "logs") {
       return { view: "tools", destination: "tools", tool, path };
     }
-    if (tool === "terminal" || tool === "collections" || tool === "screenshots") {
+    if (tool === "terminal" || tool === "collections" || tool === "screenshots" || tool === "mac-dot-clean") {
       return { view: "tools", destination: "tools", tool };
     }
 
@@ -72,6 +76,9 @@ export function writeViewState(
 
   params.set("view", state.view);
   if (state.view === "platform") {
+    params.set("tag", state.tag);
+  }
+  if (state.view === "states") {
     params.set("tag", state.tag);
   }
   if (state.view === "browser") {

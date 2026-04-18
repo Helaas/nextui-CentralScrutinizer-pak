@@ -4,11 +4,11 @@ import { ResourceCardGrid } from "./resource-card-grid";
 export function PlatformView({
   platform,
   onBack,
-  onOpenScope,
+  onOpenResource,
 }: {
   platform: PlatformSummary;
   onBack: () => void;
-  onOpenScope: (scope: "roms" | "saves" | "bios" | "overlays" | "cheats") => void;
+  onOpenResource: (resource: "roms" | "saves" | "states" | "bios" | "overlays" | "cheats") => void;
 }) {
   return (
     <div className="space-y-6">
@@ -20,7 +20,7 @@ export function PlatformView({
         <span aria-hidden="true">←</span>
         Back to Library
       </button>
-      <ResourceCardGrid onSelect={onOpenScope} platform={platform} />
+      <ResourceCardGrid onSelect={onOpenResource} platform={platform} />
     </div>
   );
 }

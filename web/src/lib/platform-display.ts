@@ -14,7 +14,8 @@ function platformHasVisibleContent(platform: PlatformSummary): boolean {
   return (
     platform.counts.roms > 0 ||
     platform.counts.saves > 0 ||
-    platform.bios.present > 0 ||
+    platform.counts.states > 0 ||
+    platform.counts.bios > 0 ||
     platform.counts.overlays > 0 ||
     platform.counts.cheats > 0
   );

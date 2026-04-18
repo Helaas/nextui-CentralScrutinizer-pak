@@ -4,8 +4,10 @@ import {
   beginUploadFiles,
   buildDownloadUrl,
   getBrowser,
+  getMacDotfiles,
   getPlatforms,
   getLogs,
+  getSaveStates,
   getStatus,
   pairBrowser,
   pairBrowserQr,
@@ -168,7 +170,9 @@ describe("authenticated GET helpers", () => {
     await getStatus();
     await getPlatforms("csrf-token");
     await getBrowser("files", "csrf-token", undefined, "Screenshots");
+    await getSaveStates("GBA", "csrf-token");
     await getLogs("csrf-token");
+    await getMacDotfiles("csrf-token");
     await searchFiles("Screenshots", "shot", "csrf-token");
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/status");
@@ -184,11 +188,21 @@ describe("authenticated GET helpers", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
-      "/api/logs",
+      "/api/states?tag=GBA",
       expect.objectContaining({ headers: { "X-CS-CSRF": "csrf-token" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       5,
+      "/api/logs",
+      expect.objectContaining({ headers: { "X-CS-CSRF": "csrf-token" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/tools/mac-dotfiles",
+      expect.objectContaining({ headers: { "X-CS-CSRF": "csrf-token" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
       "/api/files/search?path=Screenshots&q=shot",
       expect.objectContaining({ headers: { "X-CS-CSRF": "csrf-token" } }),
     );
