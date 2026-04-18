@@ -35,8 +35,10 @@ async function pickSingleFile(accept: string): Promise<File | null> {
 
 export function CollectionsToolView({
   csrf,
+  onBack,
 }: {
   csrf: string | null;
+  onBack: () => void;
 }) {
   const [collections, setCollections] = useState<CollectionItem[]>([]);
   const [backgroundPath, setBackgroundPath] = useState<string | null>(null);
@@ -234,9 +236,17 @@ export function CollectionsToolView({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Collections</h2>
+          <button
+            className="inline-flex items-center gap-2 text-sm text-[var(--muted)] transition hover:text-[var(--text)]"
+            onClick={onBack}
+            type="button"
+          >
+            <span aria-hidden="true">←</span>
+            Back
+          </button>
+          <h2 className="mt-4 text-lg font-semibold">Collections</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
             Create playlists, reorder ROM paths, and manage collection artwork.
           </p>

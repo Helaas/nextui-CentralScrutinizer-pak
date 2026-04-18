@@ -20,8 +20,10 @@ function formatDate(value: number): string {
 
 export function ScreenshotsToolView({
   csrf,
+  onBack,
 }: {
   csrf: string | null;
+  onBack: () => void;
 }) {
   const [entries, setEntries] = useState<BrowserEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,9 +125,17 @@ export function ScreenshotsToolView({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold">Screenshots</h2>
+          <button
+            className="inline-flex items-center gap-2 text-sm text-[var(--muted)] transition hover:text-[var(--text)]"
+            onClick={onBack}
+            type="button"
+          >
+            <span aria-hidden="true">←</span>
+            Back
+          </button>
+          <h2 className="mt-4 text-lg font-semibold">Screenshots</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">Browse captures from `Screenshots/` and export them in bulk.</p>
         </div>
         <button

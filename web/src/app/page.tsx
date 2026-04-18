@@ -1087,9 +1087,19 @@ export default function Page() {
         refreshSession={refreshSessionState}
       />
     ) : viewState.view === "tools" && viewState.tool === "collections" ? (
-      <CollectionsToolView csrf={session.csrf} />
+      <CollectionsToolView
+        csrf={session.csrf}
+        onBack={() => {
+          navigate({ view: "tools", destination: "tools" });
+        }}
+      />
     ) : viewState.view === "tools" && viewState.tool === "screenshots" ? (
-      <ScreenshotsToolView csrf={session.csrf} />
+      <ScreenshotsToolView
+        csrf={session.csrf}
+        onBack={() => {
+          navigate({ view: "tools", destination: "tools" });
+        }}
+      />
     ) : viewState.view === "tools" && viewState.tool === "mac-dot-clean" ? (
       <MacDotCleanToolView
         csrf={session.csrf}

@@ -356,6 +356,83 @@ describe("Page", () => {
     expect(window.location.search).toBe("?view=tools&tool=mac-dot-clean");
   });
 
+  it("returns to tools after opening the collections tool", async () => {
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser.mockResolvedValue({
+      scope: "files",
+      title: "Collections",
+      rootPath: "Collections",
+      path: "Collections",
+      breadcrumbs: [],
+      truncated: false,
+      entries: [
+        {
+          name: "Favorites.txt",
+          path: "Collections/Favorites.txt",
+          type: "file",
+          size: 32,
+          modified: 1_713_424_899,
+          status: "",
+          thumbnailPath: "",
+        },
+      ],
+    });
+    mockApi.readTextFile.mockResolvedValue("/Roms/Game Boy Advance (GBA)/Pokemon Emerald.gba\n");
+
+    render(<Page />);
+
+    await openTools();
+    fireEvent.click(await screen.findByRole("button", { name: /Collections/ }));
+
+    expect(await screen.findByRole("button", { name: "Back" })).toBeTruthy();
+    expect(window.location.search).toBe("?view=tools&tool=collections");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Tools" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Collections/ })).toBeTruthy();
+    expect(window.location.search).toBe("?view=tools");
+  });
+
+  it("returns to tools after opening the screenshots tool", async () => {
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser.mockResolvedValue({
+      scope: "files",
+      title: "Screenshots",
+      rootPath: "Screenshots",
+      path: "Screenshots",
+      breadcrumbs: [],
+      truncated: false,
+      entries: [
+        {
+          name: "capture-01.png",
+          path: "Screenshots/capture-01.png",
+          type: "file",
+          size: 1024,
+          modified: 1_713_424_899,
+          status: "",
+          thumbnailPath: "",
+        },
+      ],
+    });
+
+    render(<Page />);
+
+    await openTools();
+    fireEvent.click(await screen.findByRole("button", { name: /Screenshots/ }));
+
+    expect(await screen.findByRole("button", { name: "Back" })).toBeTruthy();
+    expect(window.location.search).toBe("?view=tools&tool=screenshots");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Tools" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Screenshots/ })).toBeTruthy();
+    expect(window.location.search).toBe("?view=tools");
+  });
+
   it("syncs the tools workspace from the url and popstate history", async () => {
     mockApi.getSession.mockResolvedValue(pairedSession());
     mockApi.getPlatforms.mockResolvedValue(platformGroups());

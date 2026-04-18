@@ -38,7 +38,7 @@ describe("ScreenshotsToolView", () => {
       ],
     });
 
-    render(<ScreenshotsToolView csrf="csrf-token" />);
+    render(<ScreenshotsToolView csrf="csrf-token" onBack={vi.fn()} />);
 
     const downloadAll = await screen.findByRole("button", { name: "Download All" });
     const download = screen.getByRole("link", { name: "Download" });
@@ -56,5 +56,25 @@ describe("ScreenshotsToolView", () => {
     expect(deleteButton.className).toContain("inline-flex");
     expect(deleteButton.className).toContain("flex-1");
     expect(deleteButton.className).toContain("min-h-11");
+  });
+
+  it("renders a back button for the selected tools view", () => {
+    const onBack = vi.fn();
+
+    mockApi.getBrowser.mockResolvedValue({
+      scope: "files",
+      title: "Screenshots",
+      rootPath: "Screenshots",
+      path: "Screenshots",
+      breadcrumbs: [],
+      truncated: false,
+      entries: [],
+    });
+
+    render(<ScreenshotsToolView csrf="csrf-token" onBack={onBack} />);
+
+    screen.getByRole("button", { name: "Back" }).click();
+
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 });
