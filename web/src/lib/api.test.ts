@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  PAIRING_UNAVAILABLE_MESSAGE,
   UPLOAD_BATCH_SIZE,
   beginUploadFiles,
   beginUploadFilesBatched,
@@ -105,6 +106,21 @@ describe("pairBrowser", () => {
         body: "browser_id=browser-1&code=7391",
       }),
     );
+  });
+
+  it("maps pairing_unavailable to the handheld recovery message", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({ error: "pairing_unavailable" }),
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(pairBrowser("7391", "browser-1")).rejects.toMatchObject({
+      code: "pairing_unavailable",
+      message: PAIRING_UNAVAILABLE_MESSAGE,
+    });
   });
 });
 

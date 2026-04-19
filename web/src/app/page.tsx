@@ -16,6 +16,8 @@ import { ScreenshotsToolView } from "../components/screenshots-tool-view";
 import { TerminalToolView } from "../components/terminal-tool-view";
 import { ToolsView } from "../components/tools-view";
 import {
+  ApiError,
+  PAIRING_UNAVAILABLE_MESSAGE,
   beginUploadFilesBatched,
   createFolder,
   deleteItem,
@@ -132,6 +134,7 @@ function normalizeSession(
     paired: session?.paired === true,
     csrf: typeof session?.csrf === "string" ? session.csrf : null,
     trustedCount: typeof session?.trustedCount === "number" ? session.trustedCount : 0,
+    pairingAvailable: session?.pairingAvailable !== false,
     capabilities: {
       terminal: session?.capabilities?.terminal === true,
     },
@@ -143,6 +146,7 @@ function emptySession(): SessionResponse {
     paired: false,
     csrf: null,
     trustedCount: 0,
+    pairingAvailable: true,
     capabilities: {
       terminal: false,
     },
@@ -155,6 +159,10 @@ function getPairErrorMessage(error: unknown): string {
 
 function getReconnectMessage(): string {
   return "Connection restored, but this browser is no longer trusted. Refresh the PIN or QR code on the device to pair again.";
+}
+
+function getPairingUnavailableMessage(): string {
+  return PAIRING_UNAVAILABLE_MESSAGE;
 }
 
 function isFileBrowserTool(
@@ -326,6 +334,17 @@ export default function Page() {
               return;
             }
 
+            if (error instanceof ApiError && error.code === "pairing_unavailable") {
+              setSession({
+                ...emptySession(),
+                pairingAvailable: false,
+              });
+              setPairError(null);
+              setPairMessage(getPairingUnavailableMessage());
+              navigate({ view: "pair" }, true);
+              return;
+            }
+
             setPairError(getPairErrorMessage(error));
             navigate({ view: "pair" }, true);
           } finally {
@@ -345,6 +364,7 @@ export default function Page() {
         setRetryUnavailableSession(false);
         setSession(nextSession);
         if (!nextSession.paired) {
+          setPairMessage(nextSession.pairingAvailable ? null : getPairingUnavailableMessage());
           navigate({ view: "pair" }, true);
           return;
         }
@@ -457,7 +477,13 @@ export default function Page() {
           setRetryUnavailableSession(false);
           setSession(nextSession);
           setPairError(null);
-          setPairMessage(retryUnavailableSession ? null : getReconnectMessage());
+          setPairMessage(
+            nextSession.pairingAvailable
+              ? retryUnavailableSession
+                ? null
+                : getReconnectMessage()
+              : getPairingUnavailableMessage(),
+          );
           navigate({ view: "pair" }, true);
           return;
         }
@@ -518,6 +544,7 @@ export default function Page() {
         error={pairError}
         isBusy={isPairing}
         message={pairMessage}
+        pairingAvailable={session.pairingAvailable}
         onSubmit={async (code) => {
           setPairError(null);
           setPairMessage(null);
@@ -533,6 +560,17 @@ export default function Page() {
             navigate({ view: "dashboard", destination: "library" }, true);
             await refreshCurrentData({ view: "dashboard", destination: "library" }, pairedSession.csrf);
           } catch (error) {
+            if (error instanceof ApiError && error.code === "pairing_unavailable") {
+              setSession((current) => ({
+                ...(current ?? emptySession()),
+                paired: false,
+                csrf: null,
+                pairingAvailable: false,
+              }));
+              setPairError(null);
+              setPairMessage(getPairingUnavailableMessage());
+              return;
+            }
             setPairError(getPairErrorMessage(error));
           } finally {
             setIsPairing(false);

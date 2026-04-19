@@ -2,6 +2,7 @@ export type SessionResponse = {
   paired: boolean;
   csrf: string | null;
   trustedCount: number;
+  pairingAvailable: boolean;
   capabilities: {
     terminal: boolean;
   };

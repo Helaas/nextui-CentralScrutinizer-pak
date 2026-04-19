@@ -63,6 +63,7 @@ int cs_route_session_handler(struct mg_connection *conn, void *cbdata) {
     char csrf_token[CS_SESSION_CSRF_TOKEN_HEX_LEN + 1];
     const char *cookie;
     int is_paired;
+    int pairing_available;
     int trusted_count;
     int written;
 
@@ -72,14 +73,16 @@ int cs_route_session_handler(struct mg_connection *conn, void *cbdata) {
 
     cookie = mg_get_header(conn, "Cookie");
     is_paired = cs_server_cookie_is_valid(cookie);
+    pairing_available = cs_app_pairing_available(app);
     trusted_count = cs_server_get_trusted_count();
     if (!is_paired) {
         written = snprintf(body,
                            sizeof(body),
                            cs_terminal_feature_enabled(app)
-                               ? "{\"paired\":false,\"csrf\":null,\"trustedCount\":%d,\"capabilities\":{\"terminal\":true}}"
-                               : "{\"paired\":false,\"csrf\":null,\"trustedCount\":%d,\"capabilities\":{\"terminal\":false}}",
-                           trusted_count);
+                               ? "{\"paired\":false,\"csrf\":null,\"trustedCount\":%d,\"pairingAvailable\":%s,\"capabilities\":{\"terminal\":true}}"
+                               : "{\"paired\":false,\"csrf\":null,\"trustedCount\":%d,\"pairingAvailable\":%s,\"capabilities\":{\"terminal\":false}}",
+                           trusted_count,
+                           pairing_available ? "true" : "false");
         if (written < 0 || (size_t) written >= sizeof(body)) {
             return cs_write_json(conn, 500, "Internal Server Error", "{\"error\":\"session_too_large\"}");
         }
@@ -95,9 +98,10 @@ int cs_route_session_handler(struct mg_connection *conn, void *cbdata) {
 
     written = snprintf(body,
                        sizeof(body),
-                       "{\"paired\":true,\"csrf\":\"%s\",\"trustedCount\":%d,\"capabilities\":{\"terminal\":%s}}",
+                       "{\"paired\":true,\"csrf\":\"%s\",\"trustedCount\":%d,\"pairingAvailable\":%s,\"capabilities\":{\"terminal\":%s}}",
                        csrf_token,
                        trusted_count,
+                       pairing_available ? "true" : "false",
                        cs_terminal_feature_enabled(app) ? "true" : "false");
     if (written < 0 || (size_t) written >= sizeof(body)) {
         return cs_write_json(conn, 500, "Internal Server Error", "{\"error\":\"session_too_large\"}");

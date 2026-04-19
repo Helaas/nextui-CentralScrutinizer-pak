@@ -23,7 +23,7 @@ else
 	MAC_UI_LDFLAGS :=
 endif
 SRC_COMMON := src/build_info.c src/paths.c src/auth.c src/session.c src/platforms.c src/states.c src/dotclean.c src/library.c src/uploads.c src/file_ops.c src/settings.c src/ui.c
-SRC_SERVER := src/terminal.c src/app.c src/server.c src/routes_status.c src/routes_auth.c src/routes_helpers.c src/routes_library.c src/routes_states.c src/routes_logs.c src/routes_upload.c src/routes_file_ops.c src/routes_tools.c third_party/civetweb/src/civetweb.c
+SRC_SERVER := src/daemon.c src/terminal.c src/app.c src/server.c src/routes_status.c src/routes_auth.c src/routes_helpers.c src/routes_library.c src/routes_states.c src/routes_logs.c src/routes_upload.c src/routes_file_ops.c src/routes_tools.c third_party/civetweb/src/civetweb.c
 SRC_VENDOR := third_party/qrcodegen.c
 SRC_APP := src/main.c $(SRC_COMMON) $(SRC_SERVER) $(SRC_VENDOR)
 COMMON_INCLUDES := -Iinclude -Ithird_party/civetweb/include -I$(APOSTROPHE_DIR)/include -DUSE_WEBSOCKET

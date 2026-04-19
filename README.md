@@ -2,7 +2,7 @@
 
 The Central Scrutinizer is a device-hosted web manager for NextUI handhelds. Launch it on your device, open the URL shown on screen from a phone, tablet, or computer on the same network, and manage your ROM library, save states, artwork, BIOS files, collections, screenshots, logs, and more from a modern browser.
 
-It runs an HTTP server only while the pak is open. Quit the pak on the handheld to stop access.
+It runs an HTTP server while the pak is open, and it can hand that server off to a background mode after you have already paired at least one trusted browser. Reopen the pak on the handheld to stop background mode and return to pairing/settings control.
 
 ## What It Does
 
@@ -96,16 +96,17 @@ Available device-side controls:
 - **Terminal**: enable or disable browser terminal access
 - **Refresh**: refresh the server screen state
 - **Revoke Trusted Browsers**: clear trusted browser sessions and force re-pairing
+- **Run in Background**: leave the web server running after you exit back to NextUI, once at least one trusted browser has already paired
 
 Terminal access is disabled by default on handheld builds.
 
 ## Important Notes
 
-- The web dashboard is only available while the pak is open.
+- The web dashboard can keep running in background mode after you exit, but new pairing is unavailable until you reopen the pak on the handheld.
 - The handheld and browser device must be on the same network.
 - The default port is `8877`. If that port is unavailable, the app may fall back to another nearby port shown on screen.
 - Browser terminal access opens a real shell on the device. Enable it only if you understand the risk.
-- Quitting the pak immediately stops the local server.
+- Quitting the pak from the normal foreground screen stops the local server unless you explicitly switch to background mode first.
 
 ## Managed Locations
 

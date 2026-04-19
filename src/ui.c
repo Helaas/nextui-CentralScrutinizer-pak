@@ -96,6 +96,10 @@ static void cs_ui_show_settings_error(const char *message) {
     (void) ap_confirmation(&opts, &result);
 }
 
+void cs_ui_show_error(const char *message) {
+    cs_ui_show_settings_error(message);
+}
+
 static int cs_ui_scale_px(int screen_w, int base) {
     int scaled;
 
@@ -303,6 +307,7 @@ static int cs_ui_run_settings_screen(cs_app *app) {
     ap_options_item items[] = {
         {.label = "Terminal", .type = AP_OPT_STANDARD, .options = terminal_options, .option_count = 2, .selected_option = 0},
         {.label = "Revoke Trusted Browsers", .type = AP_OPT_CLICKABLE},
+        {.label = "Run in Background", .type = AP_OPT_CLICKABLE},
     };
     ap_footer_item footer[] = {
         {.button = AP_BTN_B, .label = "Back"},
@@ -346,6 +351,29 @@ static int cs_ui_run_settings_screen(cs_app *app) {
             switch (result.focused_index) {
                 case 1:
                     return CS_UI_ACTION_REVOKE;
+                case 2: {
+                    ap_footer_item confirm_footer[] = {
+                        {.button = AP_BTN_B, .label = "Cancel"},
+                        {.button = AP_BTN_A, .label = "Run", .is_confirm = true},
+                    };
+                    ap_message_opts confirm_opts = {
+                        .message = "Trusted browsers stay connected in background mode.\n\nNew pairing is disabled until you reopen the app. Reopening it stops background mode and brings back pairing and settings. Active terminal sessions may need to reconnect.",
+                        .footer = confirm_footer,
+                        .footer_count = (int) (sizeof(confirm_footer) / sizeof(confirm_footer[0])),
+                    };
+                    ap_confirm_result confirm_result = {0};
+
+                    if (!cs_app_can_background(app)) {
+                        cs_ui_show_settings_error("Run in Background requires at least one trusted browser.");
+                        break;
+                    }
+
+                    (void) ap_confirmation(&confirm_opts, &confirm_result);
+                    if (confirm_result.confirmed) {
+                        return CS_UI_ACTION_BACKGROUND;
+                    }
+                    break;
+                }
                 default:
                     break;
             }
@@ -548,6 +576,10 @@ int cs_ui_init(void) {
 }
 
 void cs_ui_shutdown(void) {
+}
+
+void cs_ui_show_error(const char *message) {
+    (void) message;
 }
 
 int cs_ui_run_server_screen(cs_app *app, const cs_ui_model *model) {

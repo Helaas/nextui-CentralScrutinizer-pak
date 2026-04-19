@@ -5,11 +5,13 @@ export function PairScreen({
   onSubmit,
   isBusy = false,
   error,
+  pairingAvailable = true,
 }: {
   message?: string | null;
   onSubmit: (code: string) => Promise<void>;
   isBusy?: boolean;
   error?: string | null;
+  pairingAvailable?: boolean;
 }) {
   const [code, setCode] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -21,68 +23,78 @@ export function PairScreen({
         <div className="space-y-3 text-center">
           <img alt="The Central Scrutinizer" className="mx-auto h-32 w-auto" src="/logo.png" />
           <h1 className="text-2xl font-bold tracking-tight">The Central Scrutinizer</h1>
-          <p className="text-sm font-semibold text-[var(--muted)]">Please enter the PIN shown on the device.</p>
+          <p className="text-sm font-semibold text-[var(--muted)]">
+            {pairingAvailable ? "Please enter the PIN shown on the device." : "Background mode is active on the handheld."}
+          </p>
         </div>
-        <form
-          className="space-y-5"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (code.length === 4 && !isBusy) {
-              void onSubmit(code);
-            }
-          }}
-        >
-          <label className="sr-only" htmlFor="pair-code">
-            Pairing code
-          </label>
-          <div
-            className="relative"
-            onClick={() => {
-              inputRef.current?.focus();
+        {pairingAvailable ? (
+          <form
+            className="space-y-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (code.length === 4 && !isBusy) {
+                void onSubmit(code);
+              }
             }}
           >
-            <input
-              ref={inputRef}
-              aria-label="Pairing code"
-              autoFocus
-              className="absolute inset-0 opacity-0"
-              id="pair-code"
-              inputMode="numeric"
-              maxLength={4}
-              onChange={(event) => {
-                setCode(event.target.value.replace(/\D/g, "").slice(0, 4));
+            <label className="sr-only" htmlFor="pair-code">
+              Pairing code
+            </label>
+            <div
+              className="relative"
+              onClick={() => {
+                inputRef.current?.focus();
               }}
-              value={code}
-            />
-            <div className="flex justify-center gap-2">
-              {digits.map((digit, index) => {
-                const isActive = index === Math.min(code.length, 3);
-                const borderColor = error
-                  ? "border-rose-400"
-                  : digit || isActive
-                    ? "border-[var(--accent)]"
-                    : "border-[var(--border)]";
-                return (
-                  <div
-                    key={index}
-                    className={`flex h-14 w-14 items-center justify-center border bg-[var(--bg)] text-center font-mono text-xl font-bold text-[var(--text)] transition-colors ${borderColor}`}
-                  >
-                    {digit || ""}
-                  </div>
-                );
-              })}
+            >
+              <input
+                ref={inputRef}
+                aria-label="Pairing code"
+                autoFocus
+                className="absolute inset-0 opacity-0"
+                id="pair-code"
+                inputMode="numeric"
+                maxLength={4}
+                onChange={(event) => {
+                  setCode(event.target.value.replace(/\D/g, "").slice(0, 4));
+                }}
+                value={code}
+              />
+              <div className="flex justify-center gap-2">
+                {digits.map((digit, index) => {
+                  const isActive = index === Math.min(code.length, 3);
+                  const borderColor = error
+                    ? "border-rose-400"
+                    : digit || isActive
+                      ? "border-[var(--accent)]"
+                      : "border-[var(--border)]";
+                  return (
+                    <div
+                      key={index}
+                      className={`flex h-14 w-14 items-center justify-center border bg-[var(--bg)] text-center font-mono text-xl font-bold text-[var(--text)] transition-colors ${borderColor}`}
+                    >
+                      {digit || ""}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
+            {message ? <p className="text-center text-sm text-[var(--muted)]">{message}</p> : null}
+            {error ? <p className="text-center text-sm font-medium text-rose-300">{error}</p> : null}
+            <button
+              className="w-full rounded-md bg-[var(--accent)] px-4 py-3 text-sm font-semibold uppercase tracking-wider text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={code.length !== 4 || isBusy}
+              type="submit"
+            >
+              {isBusy ? "Pairing..." : "Pair Browser"}
+            </button>
+          </form>
+        ) : (
+          <div className="space-y-4 text-center">
+            <p className="text-sm text-[var(--muted)]">
+              {message ?? "Reopen the app on the handheld to pair a browser or change device settings."}
+            </p>
           </div>
-          {message ? <p className="text-center text-sm text-[var(--muted)]">{message}</p> : null}
-          {error ? <p className="text-center text-sm font-medium text-rose-300">{error}</p> : null}
-          <button
-            className="w-full rounded-md bg-[var(--accent)] px-4 py-3 text-sm font-semibold uppercase tracking-wider text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={code.length !== 4 || isBusy}
-            type="submit"
-          >
-            {isBusy ? "Pairing..." : "Pair Browser"}
-          </button>
-        </form>
+        )}
       </section>
     </main>
   );

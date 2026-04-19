@@ -2,6 +2,19 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mockApi = vi.hoisted(() => ({
+  ApiError: class MockApiError extends Error {
+    code?: string;
+    status: number;
+
+    constructor(message: string, status: number, code?: string) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.code = code;
+    }
+  },
+  PAIRING_UNAVAILABLE_MESSAGE:
+    "Pairing is unavailable while the app is running in background mode. Reopen it on the handheld to pair or change settings.",
   UploadAbortedError: class MockUploadAbortedError extends Error {
     constructor() {
       super("Upload cancelled");
@@ -82,7 +95,7 @@ function createFileList(files: File[]): FileList {
 }
 
 function pairedSession(terminal = true) {
-  return { paired: true, csrf: "csrf-token", trustedCount: 1, capabilities: { terminal } };
+  return { paired: true, csrf: "csrf-token", trustedCount: 1, pairingAvailable: true, capabilities: { terminal } };
 }
 
 function supportedResources(overrides: Partial<Record<"roms" | "saves" | "states" | "bios" | "overlays" | "cheats", boolean>> = {}) {
@@ -281,11 +294,33 @@ describe("Page", () => {
   });
 
   it("renders the pair screen when no trusted session exists", async () => {
-    mockApi.getSession.mockResolvedValue({ paired: false, csrf: null, trustedCount: 0, capabilities: { terminal: false } });
+    mockApi.getSession.mockResolvedValue({
+      paired: false,
+      csrf: null,
+      trustedCount: 0,
+      pairingAvailable: true,
+      capabilities: { terminal: false },
+    });
 
     render(<Page />);
 
     expect(await screen.findByLabelText("Pairing code")).toBeTruthy();
+  });
+
+  it("shows an informational pairing screen when background mode disables pairing", async () => {
+    mockApi.getSession.mockResolvedValue({
+      paired: false,
+      csrf: null,
+      trustedCount: 1,
+      pairingAvailable: false,
+      capabilities: { terminal: false },
+    });
+
+    render(<Page />);
+
+    expect(await screen.findByText(/Background mode is active on the handheld/i)).toBeTruthy();
+    expect(screen.queryByLabelText("Pairing code")).toBeNull();
+    expect(screen.getByText(mockApi.PAIRING_UNAVAILABLE_MESSAGE)).toBeTruthy();
   });
 
   it("keeps retrying after an initial session outage and restores the active route", async () => {
@@ -816,7 +851,13 @@ describe("Page", () => {
     mockApi.getSession
       .mockResolvedValueOnce(pairedSession())
       .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce({ paired: false, csrf: null, trustedCount: 0, capabilities: { terminal: false } });
+      .mockResolvedValueOnce({
+        paired: false,
+        csrf: null,
+        trustedCount: 0,
+        pairingAvailable: true,
+        capabilities: { terminal: false },
+      });
     mockApi.getPlatforms.mockResolvedValue(platformGroups());
 
     render(<Page />);
@@ -836,6 +877,54 @@ describe("Page", () => {
     expect(screen.getByLabelText("Pairing code")).toBeTruthy();
     expect(screen.getByText(/Connection restored, but this browser is no longer trusted/i)).toBeTruthy();
   }, 10000);
+
+  it("switches to the handheld recovery message when a paired session loses pairing availability during polling", async () => {
+    vi.useFakeTimers();
+    mockApi.getSession
+      .mockResolvedValueOnce(pairedSession())
+      .mockResolvedValueOnce({
+        paired: false,
+        csrf: null,
+        trustedCount: 1,
+        pairingAvailable: false,
+        capabilities: { terminal: false },
+      });
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+
+    render(<Page />);
+
+    await act(async () => {});
+    expect(screen.getByText("Game Boy Advance")).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await act(async () => {});
+
+    expect(screen.getByText(mockApi.PAIRING_UNAVAILABLE_MESSAGE)).toBeTruthy();
+    expect(screen.queryByLabelText("Pairing code")).toBeNull();
+  }, 10000);
+
+  it("switches to the handheld recovery message when pairing becomes unavailable", async () => {
+    mockApi.getSession.mockResolvedValue({
+      paired: false,
+      csrf: null,
+      trustedCount: 1,
+      pairingAvailable: true,
+      capabilities: { terminal: false },
+    });
+    mockApi.pairBrowser.mockRejectedValue(
+      new mockApi.ApiError(mockApi.PAIRING_UNAVAILABLE_MESSAGE, 403, "pairing_unavailable"),
+    );
+
+    render(<Page />);
+
+    fireEvent.change(await screen.findByLabelText("Pairing code"), { target: { value: "7391" } });
+    fireEvent.click(screen.getByRole("button", { name: "Pair Browser" }));
+
+    expect(await screen.findByText(mockApi.PAIRING_UNAVAILABLE_MESSAGE)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Pair Browser" })).toBeNull();
+  });
 
   it("replaces art through the dedicated png helper", async () => {
     const artFile = new File(["png"], "Pokemon Emerald.png", { type: "image/png" });

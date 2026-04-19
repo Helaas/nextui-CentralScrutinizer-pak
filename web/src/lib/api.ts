@@ -51,6 +51,9 @@ export type UploadBatchedHandle = {
   promise: Promise<UploadSummary>;
 };
 
+export const PAIRING_UNAVAILABLE_MESSAGE =
+  "Pairing is unavailable while the app is running in background mode. Reopen it on the handheld to pair or change settings.";
+
 function toQuery(params: Record<string, string | undefined>): string {
   const search = new URLSearchParams();
 
@@ -93,6 +96,9 @@ async function expectJson<T>(response: Response, errorMessage: string): Promise<
     }
     if (errorCode === "invalid_qr_token") {
       throw new ApiError("QR code is no longer valid. Refresh it on the device and try again.", response.status, errorCode);
+    }
+    if (errorCode === "pairing_unavailable") {
+      throw new ApiError(PAIRING_UNAVAILABLE_MESSAGE, response.status, errorCode);
     }
 
     throw new ApiError(errorMessage, response.status, errorCode);

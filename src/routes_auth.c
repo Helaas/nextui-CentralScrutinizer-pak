@@ -136,6 +136,9 @@ int cs_route_pair_handler(struct mg_connection *conn, void *cbdata) {
     if (!app) {
         return cs_write_json(conn, 500, "Internal Server Error", "{\"error\":\"missing_app\"}");
     }
+    if (!cs_app_pairing_available(app)) {
+        return cs_write_json(conn, 403, "Forbidden", "{\"ok\":false,\"error\":\"pairing_unavailable\"}");
+    }
 
     if (cs_read_body(conn, body, sizeof(body), &body_len) != 0) {
         return cs_write_json(conn, 400, "Bad Request", "{\"ok\":false}");
@@ -207,14 +210,23 @@ int cs_route_pair_handler(struct mg_connection *conn, void *cbdata) {
 }
 
 int cs_route_pair_qr_handler(struct mg_connection *conn, void *cbdata) {
+    cs_app *app = (cs_app *) cbdata;
     const struct mg_request_info *request = mg_get_request_info(conn);
     char token[64];
     char location[128];
 
-    (void) cbdata;
-
     if (!cs_method_is(conn, "GET")) {
         return cs_write_json(conn, 405, "Method Not Allowed", "{\"error\":\"method_not_allowed\"}");
+    }
+    if (!app) {
+        return cs_write_json(conn, 500, "Internal Server Error", "{\"error\":\"missing_app\"}");
+    }
+    if (!cs_app_pairing_available(app)) {
+        return cs_write_html(conn,
+                             403,
+                             "Forbidden",
+                             "Pairing unavailable",
+                             "Reopen the app on the handheld to pair or change settings.");
     }
     if (!request || !request->query_string || mg_get_var(request->query_string, strlen(request->query_string), "token", token, sizeof(token)) < 0) {
         return cs_write_html(conn, 400, "Bad Request", "Missing QR token", "Open the pairing QR code on the handheld and scan it again.");

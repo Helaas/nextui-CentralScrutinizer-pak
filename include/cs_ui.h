@@ -5,6 +5,7 @@ typedef enum cs_ui_action {
     CS_UI_ACTION_EXIT = 0,
     CS_UI_ACTION_REFRESH = 1,
     CS_UI_ACTION_REVOKE = 2,
+    CS_UI_ACTION_BACKGROUND = 3,
 } cs_ui_action;
 
 typedef struct cs_ui_model {
@@ -24,6 +25,7 @@ void cs_ui_model_make_active(
 void cs_ui_model_make_offline(cs_ui_model *model);
 int cs_ui_init(void);
 void cs_ui_shutdown(void);
+void cs_ui_show_error(const char *message);
 int cs_ui_run_server_screen(struct cs_app *app, const cs_ui_model *model);
 
 #endif

@@ -107,6 +107,62 @@ static int read_http_response(int port, const char *path, char *buffer, size_t b
     return 0;
 }
 
+static int read_http_response_with_cookie(int port,
+                                          const char *path,
+                                          const char *cookie,
+                                          char *buffer,
+                                          size_t buffer_len) {
+    struct sockaddr_in addr;
+    int fd;
+    size_t total = 0;
+    char request[768];
+    int written;
+
+    assert(path != NULL);
+    assert(cookie != NULL);
+    assert(buffer != NULL);
+    assert(buffer_len > 0);
+
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    assert(fd >= 0);
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t) port);
+    assert(inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) == 1);
+    assert(connect(fd, (struct sockaddr *) &addr, sizeof(addr)) == 0);
+
+    written = snprintf(request,
+                       sizeof(request),
+                       "GET %s HTTP/1.1\r\n"
+                       "Host: 127.0.0.1:%d\r\n"
+                       "Connection: close\r\n"
+                       "Cookie: %s\r\n"
+                       "\r\n",
+                       path,
+                       port,
+                       cookie);
+    assert(written > 0 && (size_t) written < sizeof(request));
+    assert(send(fd, request, (size_t) written, 0) == written);
+
+    while (total + 1 < buffer_len) {
+        ssize_t nread = recv(fd, buffer + total, buffer_len - total - 1, 0);
+
+        if (nread < 0) {
+            close(fd);
+            return -1;
+        }
+        if (nread == 0) {
+            break;
+        }
+        total += (size_t) nread;
+    }
+
+    buffer[total] = '\0';
+    close(fd);
+    return 0;
+}
+
 static int post_form_response(int port, const char *path, const char *body, char *buffer, size_t buffer_len) {
     struct sockaddr_in addr;
     int fd;
@@ -273,6 +329,26 @@ int main(void) {
     assert(strstr(response, "\"error\":\"qr_expired\"") != NULL);
 
     cs_server_stop();
+    app.daemonized = 0;
+    assert(cs_server_start(&app) == 0);
+    assert(snprintf(body, sizeof(body), "browser_id=daemon-browser&code=7391") < (int) sizeof(body));
+    assert(post_form_response(app.port, "/api/pair", body, response, sizeof(response)) == 0);
+    assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
+    extract_cookie_value(response, cookie_header, sizeof(cookie_header));
+    cs_server_stop();
+
+    app.daemonized = 1;
+    assert(cs_server_start(&app) == 0);
+    assert(read_http_response_with_cookie(app.port, "/api/session", cookie_header, response, sizeof(response)) == 0);
+    assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
+    assert(strstr(response, "\"paired\":true") != NULL);
+    assert(strstr(response, "\"pairingAvailable\":false") != NULL);
+    assert(snprintf(body, sizeof(body), "browser_id=daemon-browser-2&code=7391") < (int) sizeof(body));
+    assert(post_form_response(app.port, "/api/pair", body, response, sizeof(response)) == 0);
+    assert(strstr(response, "HTTP/1.1 403 Forbidden") != NULL);
+    assert(strstr(response, "\"error\":\"pairing_unavailable\"") != NULL);
+    cs_server_stop();
+
     unsetenv("CS_PAIRING_CODE");
     unsetenv("CS_PAIRING_CODE_REUSE");
     rmdir(web_root);

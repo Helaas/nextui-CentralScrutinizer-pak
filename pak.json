@@ -2,7 +2,7 @@
   "name": "The Central Scrutinizer",
   "version": "v0.1.0",
   "type": "TOOL",
-  "description": "Device-hosted library manager for ROMs, artwork, and BIOS that runs an HTTP server while open; quit the pak to stop it.",
+  "description": "Device-hosted library manager for ROMs, artwork, and BIOS that can keep its HTTP server running in the background after a browser is already paired.",
   "author": "Kevin Vranken",
   "release_filename": "Central Scrutinizer.pakz",
   "changelog": {
