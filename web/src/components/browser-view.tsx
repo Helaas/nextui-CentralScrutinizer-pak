@@ -11,6 +11,7 @@ import type {
 import { BrowserFilesToolbar } from "./browser-files-toolbar";
 import { BrowserWorkspaceCard } from "./browser-workspace-card";
 import { BrowserTable } from "./browser-table";
+import { DropZone } from "./drop-zone";
 import { TransferBar } from "./transfer-bar";
 
 function filterEntries(entries: BrowserEntry[], search: string): BrowserEntry[] {
@@ -102,12 +103,14 @@ export function BrowserView({
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const isFiles = scope === "files";
+  const allowDroppedDirectories = canUploadFolder && (isFiles || scope === "roms");
   const fullPath = getFullPath(scope, response);
   const itemCount = response.entries.length;
   const entries = filterEntries(response.entries, search);
 
   return (
-    <div className="space-y-5">
+    <DropZone allowDirectories={allowDroppedDirectories} disabled={transfer.active} onDrop={onUploadFiles}>
+      <div className="space-y-5">
       {isFiles ? (
         <>
           <button
@@ -283,5 +286,6 @@ export function BrowserView({
         </div>
       ) : null}
     </div>
+    </DropZone>
   );
 }

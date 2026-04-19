@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BrowserView } from "./browser-view";
@@ -17,6 +17,48 @@ const mockApi = vi.hoisted(() => ({
 }));
 
 vi.mock("../lib/api", () => mockApi);
+
+function createFileEntry(file: File) {
+  return {
+    isDirectory: false,
+    isFile: true,
+    name: file.name,
+    file: (cb: (value: File) => void) => {
+      cb(file);
+    },
+  };
+}
+
+function createDirectoryDropDataTransfer(directoryName: string, files: File[]) {
+  return {
+    items: [
+      {
+        kind: "file",
+        webkitGetAsEntry: () => ({
+          createReader: () => {
+            let emitted = false;
+
+            return {
+              readEntries: (cb: (entries: ReturnType<typeof createFileEntry>[]) => void) => {
+                if (emitted) {
+                  cb([]);
+                  return;
+                }
+
+                emitted = true;
+                cb(files.map((file) => createFileEntry(file)));
+              },
+            };
+          },
+          isDirectory: true,
+          isFile: false,
+          name: directoryName,
+        }),
+      },
+    ],
+    files: [],
+  };
+}
 
 describe("BrowserView", () => {
   afterEach(() => {
@@ -405,6 +447,59 @@ describe("BrowserView", () => {
     expect(screen.getByRole("button", { name: "Upload Folder" })).toBeTruthy();
   });
 
+  it("uploads dropped directories only when folder uploads are supported", async () => {
+    const onUploadFiles = vi.fn();
+    const props = {
+      busy: false,
+      notice: null,
+      onBack: vi.fn(),
+      onCreateFolder: vi.fn(),
+      onDeleteSelection: vi.fn(),
+      onNavigate: vi.fn(),
+      onRefresh: vi.fn(),
+      onRename: vi.fn(),
+      onReplaceArt: vi.fn(),
+      onSearchChange: vi.fn(),
+      onUploadFolder: vi.fn(),
+      onUploadFiles,
+      response: {
+        scope: "files" as const,
+        title: "Files",
+        rootPath: "SD Card",
+        path: "Imports",
+        breadcrumbs: [{ label: "Imports", path: "Imports" }],
+        truncated: false,
+        entries: [],
+      },
+      scope: "files" as const,
+      search: "",
+      transfer: { active: false, label: "", progress: 0 },
+    };
+    const file = new File(["rom"], "Pokemon Emerald.gba", { type: "application/octet-stream" });
+    const { container, rerender } = render(<BrowserView {...props} canUploadFolder={false} />);
+    const zone = container.firstElementChild as HTMLElement;
+
+    fireEvent.drop(zone, {
+      dataTransfer: createDirectoryDropDataTransfer("Favorites", [file]),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onUploadFiles).not.toHaveBeenCalled();
+
+    rerender(<BrowserView {...props} canUploadFolder />);
+
+    fireEvent.drop(zone, {
+      dataTransfer: createDirectoryDropDataTransfer("Favorites", [file]),
+    });
+
+    await waitFor(() => {
+      expect(onUploadFiles).toHaveBeenCalledTimes(1);
+    });
+    expect(
+      (onUploadFiles.mock.calls[0][0][0] as File & { webkitRelativePath?: string }).webkitRelativePath,
+    ).toBe("Favorites/Pokemon Emerald.gba");
+  });
+
   it("renders library browser chrome with ROM-only folder actions and a search bar", () => {
     render(
       <BrowserView
@@ -516,6 +611,58 @@ describe("BrowserView", () => {
     expect(screen.getByRole("menuitem", { name: "Rename" })).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: "Replace Art" })).toBeNull();
     expect(screen.getByRole("menuitem", { name: "Delete" })).toBeTruthy();
+  });
+
+  it("ignores dropped directories for non-ROM library scopes", async () => {
+    const onUploadFiles = vi.fn();
+    const { container } = render(
+      <BrowserView
+        busy={false}
+        canUploadFolder={true}
+        notice={null}
+        onBack={vi.fn()}
+        onCreateFolder={vi.fn()}
+        onDeleteSelection={vi.fn()}
+        onNavigate={vi.fn()}
+        onRefresh={vi.fn()}
+        onRename={vi.fn()}
+        onReplaceArt={vi.fn()}
+        onSearchChange={vi.fn()}
+        onUploadFolder={vi.fn()}
+        onUploadFiles={onUploadFiles}
+        response={{
+          scope: "saves",
+          title: "Saves - Game Boy Advance",
+          rootPath: "Saves/GBA",
+          path: "",
+          breadcrumbs: [],
+          truncated: false,
+          entries: [
+            {
+              name: "Pokemon Emerald.sav",
+              path: "Pokemon Emerald.sav",
+              type: "save",
+              size: 1024,
+              modified: 1_700_000_000,
+              status: "",
+              thumbnailPath: "",
+            },
+          ],
+        }}
+        scope="saves"
+        search=""
+        transfer={{ active: false, label: "", progress: 0 }}
+      />,
+    );
+
+    fireEvent.drop(container.firstElementChild as HTMLElement, {
+      dataTransfer: createDirectoryDropDataTransfer("Slots", [
+        new File(["save"], "Pokemon Emerald.sav", { type: "application/octet-stream" }),
+      ]),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onUploadFiles).not.toHaveBeenCalled();
   });
 
   it("passes the platform tag through to rom download urls", () => {
