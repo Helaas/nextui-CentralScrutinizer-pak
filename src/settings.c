@@ -130,6 +130,10 @@ int cs_settings_default_terminal_enabled(void) {
 #endif
 }
 
+int cs_settings_default_keep_awake_in_background(void) {
+    return 0;
+}
+
 int cs_settings_make_path(const cs_paths *paths, char *buffer, size_t buffer_len) {
     if (!paths || !buffer || buffer_len == 0) {
         return -1;
@@ -147,6 +151,7 @@ int cs_settings_load(const cs_paths *paths, cs_settings *settings) {
     jsmntok_t tokens[32];
     int token_count;
     int parsed_terminal_enabled;
+    int parsed_keep_awake_in_background;
     int i;
 
     if (!paths || !settings) {
@@ -154,6 +159,7 @@ int cs_settings_load(const cs_paths *paths, cs_settings *settings) {
     }
 
     settings->terminal_enabled = cs_settings_default_terminal_enabled();
+    settings->keep_awake_in_background = cs_settings_default_keep_awake_in_background();
     if (cs_settings_make_path(paths, path, sizeof(path)) != 0) {
         return -1;
     }
@@ -186,6 +192,7 @@ int cs_settings_load(const cs_paths *paths, cs_settings *settings) {
     json[file_size] = '\0';
 
     parsed_terminal_enabled = settings->terminal_enabled;
+    parsed_keep_awake_in_background = settings->keep_awake_in_background;
     jsmn_init(&parser);
     token_count = jsmn_parse(&parser, json, (size_t) file_size, tokens, sizeof(tokens) / sizeof(tokens[0]));
     if (token_count >= 1 && tokens[0].type == JSMN_OBJECT) {
@@ -194,7 +201,12 @@ int cs_settings_load(const cs_paths *paths, cs_settings *settings) {
                 if (cs_settings_copy_bool(&parsed_terminal_enabled, json, &tokens[i + 1]) == 0) {
                     settings->terminal_enabled = parsed_terminal_enabled;
                 }
-                break;
+                continue;
+            }
+            if (cs_settings_token_eq(json, &tokens[i], "keep_awake_in_background")) {
+                if (cs_settings_copy_bool(&parsed_keep_awake_in_background, json, &tokens[i + 1]) == 0) {
+                    settings->keep_awake_in_background = parsed_keep_awake_in_background;
+                }
             }
         }
     }
@@ -206,7 +218,7 @@ int cs_settings_load(const cs_paths *paths, cs_settings *settings) {
 int cs_settings_save(const cs_paths *paths, const cs_settings *settings) {
     char path[CS_PATH_MAX];
     char temp_path[PATH_MAX];
-    const char *body;
+    char body[96];
     int fd;
     FILE *fp = NULL;
     int rc = -1;
@@ -239,7 +251,14 @@ int cs_settings_save(const cs_paths *paths, const cs_settings *settings) {
         return -1;
     }
 
-    body = settings->terminal_enabled ? "{\"terminal_enabled\":true}" : "{\"terminal_enabled\":false}";
+    if (CS_SAFE_SNPRINTF(body,
+                         sizeof(body),
+                         "{\"terminal_enabled\":%s,\"keep_awake_in_background\":%s}",
+                         settings->terminal_enabled ? "true" : "false",
+                         settings->keep_awake_in_background ? "true" : "false")
+        != 0) {
+        goto cleanup;
+    }
     if (fputs(body, fp) == EOF) {
         goto cleanup;
     }

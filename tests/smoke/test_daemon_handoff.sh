@@ -39,8 +39,19 @@ web_root = os.environ["WEB_ROOT"]
 sdcard_root = os.environ["SDCARD_ROOT"]
 log_file = os.environ["LOG_FILE"]
 port = int(os.environ["PORT"])
+stay_awake_path = "/tmp/stay_awake"
 
 log = open(log_file, "ab", buffering=0)
+
+settings_path = os.path.join(sdcard_root, ".userdata", "shared", "CentralScrutinizer", "settings.json")
+os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+with open(settings_path, "w", encoding="utf-8") as handle:
+    handle.write('{"terminal_enabled":false,"keep_awake_in_background":true}')
+
+try:
+    os.unlink(stay_awake_path)
+except FileNotFoundError:
+    pass
 
 def wait_http(path: str, timeout: float = 5.0) -> str:
     deadline = time.time() + timeout
@@ -90,6 +101,15 @@ def wait_for_pid_exit(pid: int, timeout: float = 5.0) -> None:
         time.sleep(0.05)
     raise RuntimeError(f"pid {pid} did not exit")
 
+def wait_for_path_state(path: str, should_exist: bool, timeout: float = 5.0) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if os.path.exists(path) == should_exist:
+            return
+        time.sleep(0.05)
+    expected = "exist" if should_exist else "be removed"
+    raise RuntimeError(f"path {path} did not {expected}")
+
 foreground = subprocess.Popen(
     [
         app_bin,
@@ -108,6 +128,7 @@ foreground = subprocess.Popen(
 
 daemon = None
 reclaim = None
+daemon_pid = None
 
 try:
     wait_http("/api/status")
@@ -170,6 +191,7 @@ try:
     os.close(ready_r)
     daemon_state_path = os.path.join(sdcard_root, ".userdata", "shared", "CentralScrutinizer", "daemon-state.json")
     daemon_pid = wait_for_daemon_pid(daemon_state_path)
+    wait_for_path_state(stay_awake_path, True)
 
     if os.path.isdir(f"/proc/{daemon_pid}/fd"):
         for fd in (0, 1, 2):
@@ -197,6 +219,7 @@ try:
         stderr=log,
     )
     wait_for_pid_exit(daemon_pid)
+    wait_for_path_state(stay_awake_path, False)
     wait_http("/api/status")
 
     with opener.open(f"http://127.0.0.1:{port}/api/session", timeout=2) as response:
@@ -213,6 +236,19 @@ finally:
     if foreground.poll() is None:
         foreground.kill()
         foreground.wait(timeout=5)
+    if daemon_pid is not None:
+        try:
+            os.kill(daemon_pid, signal.SIGKILL)
+        except OSError:
+            pass
+        try:
+            wait_for_pid_exit(daemon_pid)
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        os.unlink(stay_awake_path)
+    except FileNotFoundError:
+        pass
     log.close()
 
 print("PASS daemon handoff smoke")

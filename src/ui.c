@@ -304,8 +304,17 @@ static int cs_ui_run_settings_screen(cs_app *app) {
         {.label = "Disabled", .value = "Disabled"},
         {.label = "Enabled", .value = "Enabled"},
     };
+    ap_option keep_awake_options[] = {
+        {.label = "Disabled", .value = "Disabled"},
+        {.label = "Enabled", .value = "Enabled"},
+    };
     ap_options_item items[] = {
         {.label = "Terminal", .type = AP_OPT_STANDARD, .options = terminal_options, .option_count = 2, .selected_option = 0},
+        {.label = "Keep Awake in Background",
+         .type = AP_OPT_STANDARD,
+         .options = keep_awake_options,
+         .option_count = 2,
+         .selected_option = 0},
         {.label = "Revoke Trusted Browsers", .type = AP_OPT_CLICKABLE},
         {.label = "Run in Background", .type = AP_OPT_CLICKABLE},
     };
@@ -326,6 +335,7 @@ static int cs_ui_run_settings_screen(cs_app *app) {
         int rc;
 
         items[0].selected_option = cs_app_get_terminal_enabled(app) ? 1 : 0;
+        items[1].selected_option = cs_app_get_keep_awake_in_background(app) ? 1 : 0;
         opts.title = "Settings";
         opts.items = items;
         opts.item_count = (int) (sizeof(items) / sizeof(items[0]));
@@ -341,17 +351,25 @@ static int cs_ui_run_settings_screen(cs_app *app) {
         if (rc == AP_CANCELLED || result.action == AP_ACTION_BACK) {
             return -1;
         }
-        if (result.action == AP_ACTION_OPTION_CHANGED && result.focused_index == 0) {
-            if (cs_app_set_terminal_enabled(app, items[0].selected_option == 1) != 0) {
-                cs_ui_show_settings_error("Could not save the terminal setting.");
+        if (result.action == AP_ACTION_OPTION_CHANGED) {
+            if (result.focused_index == 0) {
+                if (cs_app_set_terminal_enabled(app, items[0].selected_option == 1) != 0) {
+                    cs_ui_show_settings_error("Could not save the terminal setting.");
+                }
+                continue;
+            }
+            if (result.focused_index == 1) {
+                if (cs_app_set_keep_awake_in_background(app, items[1].selected_option == 1) != 0) {
+                    cs_ui_show_settings_error("Could not save the background keep-awake setting.");
+                }
             }
             continue;
         }
         if (result.action == AP_ACTION_SELECTED) {
             switch (result.focused_index) {
-                case 1:
+                case 2:
                     return CS_UI_ACTION_REVOKE;
-                case 2: {
+                case 3: {
                     ap_footer_item confirm_footer[] = {
                         {.button = AP_BTN_B, .label = "Cancel"},
                         {.button = AP_BTN_A, .label = "Run", .is_confirm = true},

@@ -18,6 +18,8 @@ int cs_daemon_state_clear(const cs_paths *paths);
 int cs_daemon_state_is_pid_running(pid_t pid);
 int cs_daemon_wait_for_pid_exit(pid_t pid, int timeout_ms);
 int cs_daemon_wait_for_port_available(int port, int timeout_ms);
+int cs_daemon_stay_awake_enable(void);
+int cs_daemon_stay_awake_disable(void);
 int cs_daemon_prepare_foreground_start(const cs_paths *paths,
                                        int requested_port,
                                        int port_explicitly_set,

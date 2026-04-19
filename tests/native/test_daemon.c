@@ -17,6 +17,7 @@
 #include "cs_auth.h"
 #include "cs_daemon.h"
 #include "cs_paths.h"
+#include "cs_settings.h"
 
 static int reserve_local_port(void) {
     struct sockaddr_in addr;
@@ -178,6 +179,15 @@ static void write_trust_store(const cs_paths *paths) {
     assert(cs_trust_store_save(trust_store_path, &store) == 0);
 }
 
+static void write_settings(const cs_paths *paths, int keep_awake_in_background) {
+    cs_settings settings = {0};
+
+    assert(paths != NULL);
+    settings.terminal_enabled = 0;
+    settings.keep_awake_in_background = keep_awake_in_background ? 1 : 0;
+    assert(cs_settings_save(paths, &settings) == 0);
+}
+
 static void run_app_child(const char *argv0,
                           const char *web_root,
                           const char *sdcard_root,
@@ -234,6 +244,7 @@ int main(void) {
     assert(setenv("CS_WEB_ROOT", web_root, 1) == 0);
     assert(cs_paths_init(&paths) == 0);
     assert(cs_daemon_state_make_path(&paths, daemon_state_path, sizeof(daemon_state_path)) == 0);
+    assert(cs_daemon_stay_awake_disable() == 0);
 
     assert(cs_daemon_state_is_pid_running(getpid()) == 1);
 
@@ -246,10 +257,13 @@ int main(void) {
 
     state.pid = stale_pid;
     state.port = 8877;
+    write_settings(&paths, 1);
     assert(cs_daemon_state_save(&paths, &state) == 0);
+    assert(cs_daemon_stay_awake_enable() == 0);
     next_port = 8877;
     assert(cs_daemon_prepare_foreground_start(&paths, next_port, 0, &next_port) == 0);
     assert(access(daemon_state_path, F_OK) != 0);
+    assert(access("/tmp/stay_awake", F_OK) != 0);
 
     port = reserve_local_port();
     assert(snprintf(port_arg, sizeof(port_arg), "%d", port) < (int) sizeof(port_arg));
@@ -258,8 +272,10 @@ int main(void) {
     assert(WEXITSTATUS(status) != 0);
     assert(access(daemon_state_path, F_OK) != 0);
     assert(cs_daemon_wait_for_port_available(port, 1000) == 0);
+    assert(access("/tmp/stay_awake", F_OK) != 0);
 
     write_trust_store(&paths);
+    write_settings(&paths, 0);
 
     launcher_pid = fork();
     assert(launcher_pid >= 0);
@@ -288,27 +304,93 @@ int main(void) {
     wait_for_daemon_state(&paths, &state, 5000);
     assert(state.port == port);
     assert(cs_daemon_state_is_pid_running(state.pid) == 1);
+    assert(access("/tmp/stay_awake", F_OK) != 0);
 
     next_port = port;
     assert(cs_daemon_prepare_foreground_start(&paths, port, 1, &next_port) == 0);
     assert(cs_daemon_state_is_pid_running(state.pid) == 0);
     assert(access(daemon_state_path, F_OK) != 0);
     assert(cs_daemon_wait_for_port_available(port, 1000) == 0);
+    assert(access("/tmp/stay_awake", F_OK) != 0);
+
+    write_settings(&paths, 1);
+
+    launcher_pid = fork();
+    assert(launcher_pid >= 0);
+    if (launcher_pid == 0) {
+        pid_t daemon_pid = fork();
+        char *argv[] = {(char *) argv0,
+                        "--headless",
+                        "--daemonized",
+                        "--port",
+                        port_arg,
+                        "--web-root",
+                        web_root,
+                        "--sdcard",
+                        sdcard_root,
+                        NULL};
+
+        assert(daemon_pid >= 0);
+        if (daemon_pid == 0) {
+            _exit(cs_app_run((int) (sizeof(argv) / sizeof(argv[0])) - 1, argv));
+        }
+        _exit(0);
+    }
+    assert(waitpid(launcher_pid, &status, 0) == launcher_pid);
+
+    wait_for_listener(port, 5000);
+    wait_for_daemon_state(&paths, &state, 5000);
+    assert(state.port == port);
+    assert(cs_daemon_state_is_pid_running(state.pid) == 1);
+    assert(access("/tmp/stay_awake", F_OK) == 0);
+
+    next_port = port;
+    assert(cs_daemon_prepare_foreground_start(&paths, port, 1, &next_port) == 0);
+    assert(cs_daemon_state_is_pid_running(state.pid) == 0);
+    assert(access(daemon_state_path, F_OK) != 0);
+    assert(cs_daemon_wait_for_port_available(port, 1000) == 0);
+    assert(access("/tmp/stay_awake", F_OK) != 0);
+
+    {
+        pid_t stale_marker_pid = fork();
+
+        assert(stale_marker_pid >= 0);
+        if (stale_marker_pid == 0) {
+            _exit(0);
+        }
+        assert(waitpid(stale_marker_pid, NULL, 0) == stale_marker_pid);
+
+        state.pid = stale_marker_pid;
+        state.port = port;
+        write_settings(&paths, 1);
+        assert(cs_daemon_state_save(&paths, &state) == 0);
+        assert(cs_daemon_stay_awake_enable() == 0);
+        write_settings(&paths, 0);
+
+        next_port = port;
+        assert(cs_daemon_prepare_foreground_start(&paths, port, 1, &next_port) == 0);
+        assert(access(daemon_state_path, F_OK) != 0);
+        assert(access("/tmp/stay_awake", F_OK) != 0);
+    }
 
     {
         pid_t stubborn_pid = spawn_sigterm_ignoring_listener(port);
         cs_daemon_state stubborn_state = {.pid = stubborn_pid, .port = port};
 
         wait_for_listener(port, 5000);
+        write_settings(&paths, 1);
         assert(cs_daemon_state_save(&paths, &stubborn_state) == 0);
+        assert(cs_daemon_stay_awake_enable() == 0);
 
         assert(cs_daemon_prepare_foreground_start(&paths, port, 1, &next_port) == 0);
         assert(cs_daemon_state_is_pid_running(stubborn_pid) == 0);
         assert(access(daemon_state_path, F_OK) != 0);
         assert(cs_daemon_wait_for_port_available(port, 1000) == 0);
+        assert(access("/tmp/stay_awake", F_OK) != 0);
         (void) waitpid(stubborn_pid, NULL, WNOHANG);
     }
 
+    assert(cs_daemon_stay_awake_disable() == 0);
     remove_tree(sdcard_root);
     return 0;
 }

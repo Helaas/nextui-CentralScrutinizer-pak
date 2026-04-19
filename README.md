@@ -94,6 +94,7 @@ Press `A` on the handheld server screen to open settings.
 Available device-side controls:
 
 - **Terminal**: enable or disable browser terminal access
+- **Keep Awake in Background**: prevent the device from sleeping while Central Scrutinizer is running in background mode
 - **Refresh**: refresh the server screen state
 - **Revoke Trusted Browsers**: clear trusted browser sessions and force re-pairing
 - **Run in Background**: leave the web server running after you exit back to NextUI, once at least one trusted browser has already paired
@@ -103,6 +104,7 @@ Terminal access is disabled by default on handheld builds.
 ## Important Notes
 
 - The web dashboard can keep running in background mode after you exit, but new pairing is unavailable until you reopen the pak on the handheld.
+- Enabling **Keep Awake in Background** prevents device sleep while background mode is active and will use more battery.
 - The handheld and browser device must be on the same network.
 - The default port is `8877`. If that port is unavailable, the app may fall back to another nearby port shown on screen.
 - Browser terminal access opens a real shell on the device. Enable it only if you understand the risk.

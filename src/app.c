@@ -26,8 +26,24 @@
 #define CS_APP_DAEMON_START_SIGNAL '1'
 #define CS_APP_DAEMON_READY_TIMEOUT_MS 10000
 
+static int cs_app_save_settings(cs_app *app, int terminal_enabled, int keep_awake_in_background) {
+    cs_settings settings = {0};
+
+    if (!app) {
+        return -1;
+    }
+
+    settings.terminal_enabled = terminal_enabled ? 1 : 0;
+    settings.keep_awake_in_background = keep_awake_in_background ? 1 : 0;
+    return cs_settings_save(&app->paths, &settings);
+}
+
 int cs_app_get_terminal_enabled(const cs_app *app) {
     return app ? atomic_load_explicit((atomic_int *) &app->terminal_enabled, memory_order_relaxed) : 0;
+}
+
+int cs_app_get_keep_awake_in_background(const cs_app *app) {
+    return app ? atomic_load_explicit((atomic_int *) &app->keep_awake_in_background, memory_order_relaxed) : 0;
 }
 
 int cs_app_can_background(const cs_app *app) {
@@ -39,7 +55,6 @@ int cs_app_pairing_available(const cs_app *app) {
 }
 
 int cs_app_set_terminal_enabled(cs_app *app, int enabled) {
-    cs_settings settings = {0};
     int normalized;
 
     if (!app) {
@@ -47,8 +62,7 @@ int cs_app_set_terminal_enabled(cs_app *app, int enabled) {
     }
 
     normalized = enabled ? 1 : 0;
-    settings.terminal_enabled = normalized;
-    if (cs_settings_save(&app->paths, &settings) != 0) {
+    if (cs_app_save_settings(app, normalized, cs_app_get_keep_awake_in_background(app)) != 0) {
         return -1;
     }
 
@@ -57,6 +71,22 @@ int cs_app_set_terminal_enabled(cs_app *app, int enabled) {
         cs_terminal_manager_close_all(app, "{\"type\":\"error\",\"error\":\"terminal_disabled\"}");
     }
 
+    return 0;
+}
+
+int cs_app_set_keep_awake_in_background(cs_app *app, int enabled) {
+    int normalized;
+
+    if (!app) {
+        return -1;
+    }
+
+    normalized = enabled ? 1 : 0;
+    if (cs_app_save_settings(app, cs_app_get_terminal_enabled(app), normalized) != 0) {
+        return -1;
+    }
+
+    atomic_store_explicit(&app->keep_awake_in_background, normalized, memory_order_relaxed);
     return 0;
 }
 
@@ -574,10 +604,12 @@ int cs_app_run(int argc, char **argv) {
         return 1;
     }
     settings.terminal_enabled = cs_settings_default_terminal_enabled();
+    settings.keep_awake_in_background = cs_settings_default_keep_awake_in_background();
     if (cs_settings_load(&app.paths, &settings) != 0) {
         fprintf(stderr, "Failed to load settings, using defaults\n");
     }
     atomic_init(&app.terminal_enabled, settings.terminal_enabled ? 1 : 0);
+    atomic_init(&app.keep_awake_in_background, settings.keep_awake_in_background ? 1 : 0);
     if (cs_terminal_manager_init(&app) != 0) {
         fprintf(stderr, "Failed to initialize terminal manager\n");
         return 1;
@@ -600,42 +632,45 @@ int cs_app_run(int argc, char **argv) {
     }
 
     if (app.headless) {
+        int server_started = 0;
+        int stay_awake_active = 0;
+
         if (cs_server_start(&app) != 0) {
             cs_app_write_daemon_ready_status(&app, CS_APP_DAEMON_READY_FAIL);
-            if (has_oldset) {
-                (void) sigprocmask(SIG_SETMASK, &oldset, NULL);
-            }
-            cs_terminal_manager_shutdown(&app);
             fprintf(stderr, "Failed to start HTTP server\n");
-            return 1;
+            goto headless_fail;
         }
+        server_started = 1;
         if (app.daemonized) {
             cs_daemon_state state = {.pid = getpid(), .port = app.port};
 
             if (!cs_app_can_background(&app)) {
                 cs_app_write_daemon_ready_status(&app, CS_APP_DAEMON_READY_FAIL);
-                cs_server_stop();
-                cs_terminal_manager_shutdown(&app);
-                if (has_oldset) {
-                    (void) sigprocmask(SIG_SETMASK, &oldset, NULL);
-                }
                 fprintf(stderr, "Daemonized mode requires at least one trusted browser\n");
-                return 1;
+                goto headless_fail;
             }
             if (cs_daemon_state_save(&app.paths, &state) != 0) {
                 cs_app_write_daemon_ready_status(&app, CS_APP_DAEMON_READY_FAIL);
-                cs_server_stop();
-                cs_terminal_manager_shutdown(&app);
-                if (has_oldset) {
-                    (void) sigprocmask(SIG_SETMASK, &oldset, NULL);
-                }
                 fprintf(stderr, "Failed to persist daemon state\n");
-                return 1;
+                goto headless_fail;
+            }
+            if (cs_app_get_keep_awake_in_background(&app)) {
+                if (cs_daemon_stay_awake_enable() != 0) {
+                    cs_app_write_daemon_ready_status(&app, CS_APP_DAEMON_READY_FAIL);
+                    fprintf(stderr, "Failed to enable stay-awake mode\n");
+                    goto headless_fail;
+                }
+                stay_awake_active = 1;
             }
         }
         cs_app_write_daemon_ready_status(&app, CS_APP_DAEMON_READY_OK);
         int loop_result = cs_app_run_headless_loop(&waitset);
-        cs_server_stop();
+        if (server_started) {
+            cs_server_stop();
+        }
+        if (stay_awake_active) {
+            (void) cs_daemon_stay_awake_disable();
+        }
         if (app.daemonized) {
             (void) cs_daemon_state_clear(&app.paths);
         }
@@ -644,6 +679,22 @@ int cs_app_run(int argc, char **argv) {
             (void) sigprocmask(SIG_SETMASK, &oldset, NULL);
         }
         return loop_result == 0 ? 0 : 1;
+
+headless_fail:
+        if (server_started) {
+            cs_server_stop();
+        }
+        if (stay_awake_active) {
+            (void) cs_daemon_stay_awake_disable();
+        }
+        if (app.daemonized) {
+            (void) cs_daemon_state_clear(&app.paths);
+        }
+        cs_terminal_manager_shutdown(&app);
+        if (has_oldset) {
+            (void) sigprocmask(SIG_SETMASK, &oldset, NULL);
+        }
+        return 1;
     }
 
     {

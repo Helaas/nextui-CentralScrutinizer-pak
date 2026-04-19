@@ -41,25 +41,34 @@ int main(void) {
     assert(strstr(path, "/settings.json") != NULL);
 
     loaded.terminal_enabled = 99;
+    loaded.keep_awake_in_background = 99;
     assert(cs_settings_load(&paths, &loaded) == 0);
     assert(loaded.terminal_enabled == cs_settings_default_terminal_enabled());
+    assert(loaded.keep_awake_in_background == cs_settings_default_keep_awake_in_background());
 
     settings.terminal_enabled = 0;
+    settings.keep_awake_in_background = 1;
     assert(cs_settings_save(&paths, &settings) == 0);
 
     loaded.terminal_enabled = 1;
+    loaded.keep_awake_in_background = 0;
     assert(cs_settings_load(&paths, &loaded) == 0);
     assert(loaded.terminal_enabled == 0);
+    assert(loaded.keep_awake_in_background == 1);
 
     write_file(path, "{not-json");
     loaded.terminal_enabled = 77;
+    loaded.keep_awake_in_background = 77;
     assert(cs_settings_load(&paths, &loaded) == 0);
     assert(loaded.terminal_enabled == cs_settings_default_terminal_enabled());
+    assert(loaded.keep_awake_in_background == cs_settings_default_keep_awake_in_background());
 
     write_file(path, "{\"terminal_enabled\":true}");
     loaded.terminal_enabled = 0;
+    loaded.keep_awake_in_background = 1;
     assert(cs_settings_load(&paths, &loaded) == 0);
     assert(loaded.terminal_enabled == 1);
+    assert(loaded.keep_awake_in_background == 0);
 
     unlink(path);
     rmdir(paths.shared_state_root);

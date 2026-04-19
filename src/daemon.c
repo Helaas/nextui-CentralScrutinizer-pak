@@ -18,6 +18,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+static const char *CS_DAEMON_STAY_AWAKE_PATH = "/tmp/stay_awake";
+
 static int cs_daemon_ensure_parent_dir(const char *path) {
     char parent[CS_PATH_MAX];
     size_t i;
@@ -127,6 +129,44 @@ static int cs_daemon_can_bind_port(int port) {
         return 0;
     }
     return -1;
+}
+
+int cs_daemon_stay_awake_enable(void) {
+    static const char marker[] = "1\n";
+    int fd;
+    ssize_t total_written = 0;
+
+    fd = open(CS_DAEMON_STAY_AWAKE_PATH, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0664);
+    if (fd < 0) {
+        return -1;
+    }
+
+    while (total_written < (ssize_t) (sizeof(marker) - 1)) {
+        ssize_t written = write(fd, marker + total_written, (size_t) ((sizeof(marker) - 1) - total_written));
+
+        if (written < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            close(fd);
+            return -1;
+        }
+        total_written += written;
+    }
+
+    if (close(fd) != 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int cs_daemon_stay_awake_disable(void) {
+    if (unlink(CS_DAEMON_STAY_AWAKE_PATH) != 0 && errno != ENOENT) {
+        return -1;
+    }
+
+    return 0;
 }
 
 int cs_daemon_state_make_path(const cs_paths *paths, char *buffer, size_t buffer_len) {
@@ -376,6 +416,9 @@ int cs_daemon_prepare_foreground_start(const cs_paths *paths,
     load_rc = cs_daemon_state_load(paths, &state);
     if (load_rc != 0) {
         (void) cs_daemon_state_clear(paths);
+        if (cs_daemon_stay_awake_disable() != 0) {
+            return -1;
+        }
         return 0;
     }
     if (state.port > 0) {
@@ -386,11 +429,17 @@ int cs_daemon_prepare_foreground_start(const cs_paths *paths,
     }
     if (state.pid <= 0) {
         (void) cs_daemon_state_clear(paths);
+        if (cs_daemon_stay_awake_disable() != 0) {
+            return -1;
+        }
         return 0;
     }
 
     if (!cs_daemon_state_is_pid_running(state.pid)) {
         (void) cs_daemon_state_clear(paths);
+        if (cs_daemon_stay_awake_disable() != 0) {
+            return -1;
+        }
         return 0;
     }
 
@@ -406,6 +455,9 @@ int cs_daemon_prepare_foreground_start(const cs_paths *paths,
         }
     }
     if (cs_daemon_state_clear(paths) != 0) {
+        return -1;
+    }
+    if (cs_daemon_stay_awake_disable() != 0) {
         return -1;
     }
     if (cs_daemon_wait_for_port_available(daemon_port, 2000) != 0) {
