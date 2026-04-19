@@ -1,4 +1,24 @@
-import type { PlatformGroup, PlatformSummary } from "./types";
+import type { BrowserScope, PlatformGroup, PlatformResource, PlatformSummary } from "./types";
+
+const platformResourceOrder: PlatformResource[] = ["roms", "saves", "states", "bios", "overlays", "cheats"];
+
+const platformCardLabels: Record<PlatformResource, string> = {
+  roms: "ROMs",
+  saves: "Saves",
+  states: "States",
+  bios: "BIOS",
+  overlays: "Overlays",
+  cheats: "Cheats",
+};
+
+const platformDescriptionLabels: Record<PlatformResource, string> = {
+  roms: "ROMs",
+  saves: "saves",
+  states: "states",
+  bios: "BIOS files",
+  overlays: "overlays",
+  cheats: "cheats",
+};
 
 function normalizePlatformName(name: string): string {
   return name.trim().toLowerCase();
@@ -10,15 +30,35 @@ function matchesPlatformSearch(platform: PlatformSummary, query: string): boolea
   return searchableText.includes(query);
 }
 
+export function getSupportedPlatformResources(platform: PlatformSummary): PlatformResource[] {
+  return platformResourceOrder.filter((resource) => platform.supportedResources[resource]);
+}
+
+export function platformSupportsResource(platform: PlatformSummary, resource: PlatformResource): boolean {
+  return platform.supportedResources[resource];
+}
+
+export function platformSupportsBrowserScope(
+  platform: PlatformSummary,
+  scope: Exclude<BrowserScope, "files">,
+): boolean {
+  return platformSupportsResource(platform, scope);
+}
+
 function platformHasVisibleContent(platform: PlatformSummary): boolean {
-  return (
-    platform.counts.roms > 0 ||
-    platform.counts.saves > 0 ||
-    platform.counts.states > 0 ||
-    platform.counts.bios > 0 ||
-    platform.counts.overlays > 0 ||
-    platform.counts.cheats > 0
-  );
+  return getSupportedPlatformResources(platform).some((resource) => platform.counts[resource] > 0);
+}
+
+export function formatPlatformCardSummary(platform: PlatformSummary): string {
+  return getSupportedPlatformResources(platform)
+    .map((resource) => `${platform.counts[resource]} ${platformCardLabels[resource]}`)
+    .join(" · ");
+}
+
+export function formatPlatformDescription(platform: PlatformSummary): string {
+  return getSupportedPlatformResources(platform)
+    .map((resource) => `${platform.counts[resource]} ${platformDescriptionLabels[resource]}`)
+    .join(", ");
 }
 
 export function flattenPlatformGroups(groups: PlatformGroup[]): PlatformSummary[] {

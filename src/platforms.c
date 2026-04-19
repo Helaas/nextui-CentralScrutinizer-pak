@@ -6,6 +6,10 @@
 #include <sys/stat.h>
 
 #define CS_DISCOVERED_PLATFORM_MAX 128
+#define CS_SHORTCUT_MARKER ".shortcut"
+#define CS_SHORTCUT_PREFIX "\xEF\xBB\xBF"
+/* Keep prefix-only detection for legacy shortcuts that predate the .shortcut marker file. */
+#define CS_LEGACY_SHORTCUT_PREFIX "\xE2\x98\x85 "
 
 static const cs_platform_info g_platforms[] = {
     {.tag = "PUAE",
@@ -68,6 +72,12 @@ static const cs_platform_info g_platforms[] = {
      .icon = "PICO8",
      .primary_code = "P8",
      .rom_directory = "Pico-8 (P8)"},
+    {.tag = "PORTS",
+     .name = "Ports",
+     .group = "PortMaster",
+     .icon = "PORTMASTER",
+     .primary_code = "PORTS",
+     .rom_directory = "Ports (PORTS)"},
     {.tag = "FBN",
      .name = "Arcade",
      .group = "Arcade",
@@ -329,6 +339,34 @@ static int cs_platform_is_directory(const char *path) {
     return S_ISDIR(st.st_mode) ? 1 : 0;
 }
 
+static int cs_platform_is_regular_file_not_symlink(const char *path) {
+    struct stat st;
+
+    if (!path) {
+        return 0;
+    }
+    if (lstat(path, &st) != 0) {
+        return 0;
+    }
+
+    return S_ISREG(st.st_mode) ? 1 : 0;
+}
+
+static int cs_platform_name_has_prefix(const char *name, const char *prefix) {
+    size_t prefix_len;
+
+    if (!name || !prefix) {
+        return 0;
+    }
+
+    prefix_len = strlen(prefix);
+    return prefix_len > 0 && strncmp(name, prefix, prefix_len) == 0;
+}
+
+static int cs_platform_is_ports(const cs_platform_info *platform) {
+    return platform && strcmp(platform->tag, "PORTS") == 0;
+}
+
 static const char *cs_platform_custom_icon(const char *system_code) {
     if (!system_code || system_code[0] == '\0') {
         return "DOS";
@@ -398,6 +436,52 @@ static int cs_platform_find_discovered_by_code(const cs_discovered_rom_dir *dirs
     return -1;
 }
 
+int cs_platform_supports_resource(const cs_platform_info *platform, const char *resource) {
+    if (!platform || !resource || resource[0] == '\0') {
+        return 0;
+    }
+
+    if (strcmp(resource, "roms") == 0) {
+        return 1;
+    }
+    if (cs_platform_is_ports(platform)) {
+        return 0;
+    }
+
+    return strcmp(resource, "saves") == 0 || strcmp(resource, "states") == 0 || strcmp(resource, "bios") == 0
+           || strcmp(resource, "overlays") == 0 || strcmp(resource, "cheats") == 0;
+}
+
+int cs_platform_allows_hidden_rom_entries(const cs_platform_info *platform) {
+    return cs_platform_is_ports(platform);
+}
+
+int cs_platform_is_shortcut_directory(const char *name, const char *absolute_path) {
+    char marker_path[CS_PATH_MAX];
+    const char *basename = name;
+    int written;
+
+    if ((!basename || basename[0] == '\0') && absolute_path) {
+        basename = strrchr(absolute_path, '/');
+        basename = basename ? basename + 1 : absolute_path;
+    }
+
+    if (basename && (cs_platform_name_has_prefix(basename, CS_SHORTCUT_PREFIX)
+                     || cs_platform_name_has_prefix(basename, CS_LEGACY_SHORTCUT_PREFIX))) {
+        return 1;
+    }
+    if (!absolute_path || absolute_path[0] == '\0') {
+        return 0;
+    }
+
+    written = snprintf(marker_path, sizeof(marker_path), "%s/%s", absolute_path, CS_SHORTCUT_MARKER);
+    if (written < 0 || (size_t) written >= sizeof(marker_path)) {
+        return 0;
+    }
+
+    return cs_platform_is_regular_file_not_symlink(marker_path);
+}
+
 static int cs_platform_scan_rom_dirs(const cs_paths *paths,
                                      cs_discovered_rom_dir *dirs,
                                      size_t capacity,
@@ -430,6 +514,9 @@ static int cs_platform_scan_rom_dirs(const cs_paths *paths,
             continue;
         }
         if (!cs_platform_is_directory(absolute_path)) {
+            continue;
+        }
+        if (cs_platform_is_shortcut_directory(entry->d_name, absolute_path)) {
             continue;
         }
         if (cs_platform_parse_rom_directory(entry->d_name,

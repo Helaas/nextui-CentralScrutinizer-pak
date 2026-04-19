@@ -76,6 +76,9 @@ int cs_route_states_handler(struct mg_connection *conn, void *cbdata) {
     if (cs_platform_resolve(&app->paths, tag_value, &platform) != 0) {
         return cs_routes_write_json(conn, 404, "Not Found", "{\"error\":\"platform_not_found\"}");
     }
+    if (!cs_platform_supports_resource(&platform, "states")) {
+        return cs_routes_write_json(conn, 404, "Not Found", "{\"error\":\"states_not_supported\"}");
+    }
 
     entries = (cs_state_entry *) calloc(CS_STATE_MAX_ENTRIES, sizeof(*entries));
     if (!entries) {

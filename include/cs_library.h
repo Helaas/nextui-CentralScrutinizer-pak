@@ -50,6 +50,8 @@ const char *cs_browser_scope_name(cs_browser_scope scope);
 cs_browser_scope cs_browser_scope_parse(const char *value);
 int cs_browser_scope_requires_platform(cs_browser_scope scope);
 int cs_browser_scope_allows_hidden(cs_browser_scope scope);
+int cs_browser_scope_supported_for_platform(const cs_platform_info *platform, cs_browser_scope scope);
+int cs_browser_scope_allows_hidden_for_platform(cs_browser_scope scope, const cs_platform_info *platform);
 int cs_browser_root_for_scope(const cs_paths *paths,
                               cs_browser_scope scope,
                               const cs_platform_info *platform,

@@ -1,6 +1,4 @@
-import type { PlatformSummary } from "../lib/types";
-
-type PlatformResource = "roms" | "saves" | "states" | "bios" | "overlays" | "cheats";
+import type { PlatformResource, PlatformSummary } from "../lib/types";
 
 type Card = { key: PlatformResource; label: string; glyph: string; count: number };
 
@@ -11,14 +9,14 @@ export function ResourceCardGrid({
   platform: PlatformSummary;
   onSelect: (resource: PlatformResource) => void;
 }) {
-  const cards: Card[] = [
+  const cards = ([
     { key: "roms", label: "ROMs", glyph: "ROM", count: platform.counts.roms },
     { key: "saves", label: "Saves", glyph: "SAV", count: platform.counts.saves },
     { key: "states", label: "Save States", glyph: "STA", count: platform.counts.states },
     { key: "bios", label: "BIOS", glyph: "BIO", count: platform.counts.bios },
     { key: "overlays", label: "Overlays", glyph: "OVR", count: platform.counts.overlays },
     { key: "cheats", label: "Cheats", glyph: "CHT", count: platform.counts.cheats },
-  ];
+  ] satisfies Card[]).filter((card) => platform.supportedResources[card.key]);
 
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">

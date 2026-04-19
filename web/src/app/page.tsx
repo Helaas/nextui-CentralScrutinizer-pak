@@ -36,6 +36,9 @@ import {
   createPlatformDisplayNames,
   filterPlatformGroups,
   flattenPlatformGroups,
+  formatPlatformDescription,
+  platformSupportsBrowserScope,
+  platformSupportsResource,
 } from "../lib/platform-display";
 import {
   getDestination,
@@ -52,6 +55,7 @@ import type {
   FileSearchResult,
   PlatformGroup,
   PlatformSummary,
+  PlatformResource,
   SessionResponse,
   TransferState,
 } from "../lib/types";
@@ -207,14 +211,16 @@ export default function Page() {
     }
   }
 
-  async function loadPlatforms(currentCsrf = session?.csrf) {
+  async function loadPlatforms(currentCsrf = session?.csrf): Promise<PlatformGroup[]> {
     if (!currentCsrf) {
-      return;
+      setPlatformGroups([]);
+      return [];
     }
 
     const response = await getPlatforms(currentCsrf);
 
     setPlatformGroups(response.groups);
+    return response.groups;
   }
 
   async function refreshSessionState(): Promise<SessionResponse> {
@@ -226,13 +232,23 @@ export default function Page() {
     return nextSession;
   }
 
-  async function refreshBrowser(currentView = viewState, currentCsrf = session?.csrf) {
+  async function refreshBrowser(
+    currentView = viewState,
+    currentCsrf = session?.csrf,
+    currentGroups = platformGroups,
+  ) {
     if (!currentCsrf) {
       setBrowserResponse(null);
       return;
     }
 
     if (currentView.view === "browser") {
+      const platform = findPlatform(currentGroups, currentView.tag);
+
+      if (!platform || !platformSupportsBrowserScope(platform, currentView.scope)) {
+        setBrowserResponse(null);
+        return;
+      }
       setBrowserResponse(await getBrowser(currentView.scope, currentCsrf, currentView.tag, currentView.path));
       return;
     }
@@ -245,8 +261,8 @@ export default function Page() {
   }
 
   async function refreshCurrentData(currentView = viewState, currentCsrf = session?.csrf) {
-    await loadPlatforms(currentCsrf);
-    await refreshBrowser(currentView, currentCsrf);
+    const groups = await loadPlatforms(currentCsrf);
+    await refreshBrowser(currentView, currentCsrf, groups);
   }
 
   function clearTransfer() {
@@ -362,6 +378,24 @@ export default function Page() {
 
     void refreshBrowser();
   }, [connectionLost, session?.paired, viewState]);
+
+  useEffect(() => {
+    if (viewState.view !== "browser" && viewState.view !== "states") {
+      return;
+    }
+
+    const platform = findPlatform(platformGroups, viewState.tag);
+    if (!platform) {
+      return;
+    }
+
+    if (
+      (viewState.view === "browser" && !platformSupportsBrowserScope(platform, viewState.scope)) ||
+      (viewState.view === "states" && !platformSupportsResource(platform, "states"))
+    ) {
+      navigate({ view: "platform", destination: "library", tag: platform.tag }, true);
+    }
+  }, [platformGroups, viewState]);
 
   useEffect(() => {
     if (!isFileBrowserTool(viewState)) {
@@ -523,6 +557,16 @@ export default function Page() {
   const activePlatformDisplayName = activePlatform
     ? visiblePlatformDisplayNames.get(activePlatform.tag) ?? activePlatform.name
     : undefined;
+  const fallbackToPlatformView =
+    !!activePlatform &&
+    ((viewState.view === "browser" && !platformSupportsBrowserScope(activePlatform, viewState.scope)) ||
+      (viewState.view === "states" && !platformSupportsResource(activePlatform, "states")));
+  const showPlatformView =
+    !!activePlatform && (viewState.view === "platform" || fallbackToPlatformView);
+  const showStatesView =
+    viewState.view === "states" && !!activePlatform && platformSupportsResource(activePlatform, "states");
+  const showManagedBrowserView =
+    viewState.view === "browser" && !!activePlatform && platformSupportsBrowserScope(activePlatform, viewState.scope);
   const terminalEnabled = session.capabilities?.terminal ?? false;
 
   const handleDisconnect = () => {
@@ -833,10 +877,10 @@ export default function Page() {
   };
 
   function getHeaderConfig() {
-    if (viewState.view === "platform" && activePlatform) {
+    if (showPlatformView && activePlatform) {
       return {
         destination: "library" as const,
-        description: `${activePlatform.counts.roms} ROMs, ${activePlatform.counts.saves} saves, ${activePlatform.counts.states} states, ${activePlatform.counts.bios} BIOS files, ${activePlatform.counts.overlays} overlays, ${activePlatform.counts.cheats} cheats.`,
+        description: formatPlatformDescription(activePlatform),
         searchKey: "library" as const,
         searchPlaceholder: "Search platforms...",
         showPageHeader: true,
@@ -844,7 +888,7 @@ export default function Page() {
         title: activePlatformDisplayName ?? activePlatform.name,
       };
     }
-    if (viewState.view === "states" && activePlatform) {
+    if (showStatesView && activePlatform) {
       return {
         destination: "library" as const,
         description: "Download and remove grouped save-state bundles for the selected platform.",
@@ -855,7 +899,7 @@ export default function Page() {
         title: "Save States",
       };
     }
-    if (viewState.view === "browser") {
+    if (showManagedBrowserView) {
       return {
         destination: "library" as const,
         description: "Browse, upload, rename, and delete managed content for the selected platform.",
@@ -958,12 +1002,12 @@ export default function Page() {
   const header = getHeaderConfig();
   const shellSearchValue = searchByContext[header.searchKey];
   const content =
-    viewState.view === "platform" && activePlatform ? (
+    showPlatformView && activePlatform ? (
       <PlatformView
         onBack={() => {
           navigate({ view: "dashboard", destination: "library" });
         }}
-        onOpenResource={(resource) => {
+        onOpenResource={(resource: PlatformResource) => {
           if (resource === "states") {
             navigate({ view: "states", destination: "library", tag: activePlatform.tag });
             return;
@@ -973,7 +1017,7 @@ export default function Page() {
         }}
         platform={activePlatform}
       />
-    ) : viewState.view === "states" && activePlatform ? (
+    ) : showStatesView && activePlatform ? (
       <SaveStatesView
         csrf={session.csrf}
         onBack={() => {
@@ -984,7 +1028,7 @@ export default function Page() {
         }}
         platform={activePlatform}
       />
-    ) : (viewState.view === "browser" || isFileBrowserTool(viewState)) && browserResponse ? (
+    ) : (showManagedBrowserView || isFileBrowserTool(viewState)) && browserResponse ? (
       <BrowserView
         busy={isBusy}
         canUploadFolder={canUploadFolder}

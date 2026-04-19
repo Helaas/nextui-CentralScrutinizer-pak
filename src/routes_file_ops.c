@@ -618,7 +618,7 @@ static int cs_resolve_scope_root(cs_app *app,
         return -1;
     }
 
-    *path_flags_out = cs_browser_scope_allows_hidden(scope) ? CS_PATH_FLAG_ALLOW_HIDDEN : 0;
+    *path_flags_out = cs_browser_scope_allows_hidden_for_platform(scope, platform) ? CS_PATH_FLAG_ALLOW_HIDDEN : 0;
     return 0;
 }
 

@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import { createPlatformDisplayNames, filterPlatformGroups, flattenPlatformGroups } from "./platform-display";
+import {
+  createPlatformDisplayNames,
+  filterPlatformGroups,
+  flattenPlatformGroups,
+  formatPlatformDescription,
+} from "./platform-display";
 import type { PlatformGroup } from "./types";
+
+function supportedResources(overrides: Partial<Record<"roms" | "saves" | "states" | "bios" | "overlays" | "cheats", boolean>> = {}) {
+  return {
+    roms: true,
+    saves: true,
+    states: true,
+    bios: true,
+    overlays: true,
+    cheats: true,
+    ...overrides,
+  };
+}
 
 function buildGroups(): PlatformGroup[] {
   return [
@@ -17,6 +34,7 @@ function buildGroups(): PlatformGroup[] {
           romPath: "Roms/Game Boy Advance (GBA)",
           savePath: "Saves/GBA",
           biosPath: "Bios/GBA",
+          supportedResources: supportedResources(),
           counts: { roms: 2, saves: 1, states: 0, bios: 0, overlays: 0, cheats: 0 },
         },
         {
@@ -28,6 +46,7 @@ function buildGroups(): PlatformGroup[] {
           romPath: "Roms/Game Boy Advance (MGBA)",
           savePath: "Saves/MGBA",
           biosPath: "Bios/MGBA",
+          supportedResources: supportedResources(),
           counts: { roms: 0, saves: 0, states: 0, bios: 0, overlays: 0, cheats: 0 },
         },
       ],
@@ -44,6 +63,7 @@ function buildGroups(): PlatformGroup[] {
           romPath: "Roms/Atari 5200 (A5200)",
           savePath: "Saves/A5200",
           biosPath: "Bios/A5200",
+          supportedResources: supportedResources(),
           counts: { roms: 0, saves: 0, states: 0, bios: 1, overlays: 0, cheats: 0 },
         },
         {
@@ -55,6 +75,7 @@ function buildGroups(): PlatformGroup[] {
           romPath: "Roms/Atari Lynx (LYNX)",
           savePath: "Saves/LYNX",
           biosPath: "Bios/LYNX",
+          supportedResources: supportedResources(),
           counts: { roms: 0, saves: 2, states: 0, bios: 0, overlays: 1, cheats: 0 },
         },
       ],
@@ -71,6 +92,7 @@ function buildGroups(): PlatformGroup[] {
           romPath: "Roms/Amiga (PUAE)",
           savePath: "Saves/PUAE",
           biosPath: "Bios/PUAE",
+          supportedResources: supportedResources(),
           counts: { roms: 0, saves: 0, states: 0, bios: 1, overlays: 0, cheats: 0 },
         },
       ],
@@ -112,5 +134,28 @@ describe("platform-display", () => {
 
     expect(visiblePlatforms).toHaveLength(1);
     expect(visiblePlatforms[0]?.tag).toBe("MGBA");
+  });
+
+  it("formats descriptions using only supported resources", () => {
+    const description = formatPlatformDescription({
+      tag: "PORTS",
+      name: "Ports",
+      group: "PortMaster",
+      icon: "PORTMASTER",
+      isCustom: false,
+      romPath: "Roms/Ports (PORTS)",
+      savePath: "Saves/PORTS",
+      biosPath: "Bios/PORTS",
+      supportedResources: supportedResources({
+        saves: false,
+        states: false,
+        bios: false,
+        overlays: false,
+        cheats: false,
+      }),
+      counts: { roms: 7, saves: 0, states: 0, bios: 0, overlays: 0, cheats: 0 },
+    });
+
+    expect(description).toBe("7 ROMs");
   });
 });

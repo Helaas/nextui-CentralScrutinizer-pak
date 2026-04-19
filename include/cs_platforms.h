@@ -29,5 +29,8 @@ int cs_platform_parse_rom_directory(const char *dir_name,
                                     size_t system_name_size,
                                     char *system_code,
                                     size_t system_code_size);
+int cs_platform_supports_resource(const cs_platform_info *platform, const char *resource);
+int cs_platform_allows_hidden_rom_entries(const cs_platform_info *platform);
+int cs_platform_is_shortcut_directory(const char *name, const char *absolute_path);
 
 #endif

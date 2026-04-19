@@ -11,6 +11,17 @@ vi.mock("../lib/api", () => mockApi);
 
 import { CollectionEditorModal } from "./collection-editor-modal";
 
+function supportedResources() {
+  return {
+    roms: true,
+    saves: true,
+    states: true,
+    bios: true,
+    overlays: true,
+    cheats: true,
+  };
+}
+
 describe("CollectionEditorModal", () => {
   afterEach(() => {
     cleanup();
@@ -32,6 +43,7 @@ describe("CollectionEditorModal", () => {
               romPath: "Roms/Game Boy Advance (GBA)",
               savePath: "Saves/GBA",
               biosPath: "Bios/GBA",
+              supportedResources: supportedResources(),
               counts: { roms: 2, saves: 0, states: 0, bios: 0, overlays: 0, cheats: 0 },
             },
           ],

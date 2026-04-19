@@ -14,6 +14,8 @@ static void make_dir(const char *path) {
     assert(mkdir(path, 0700) == 0);
 }
 
+static void write_file(const char *path, const char *content);
+
 static void set_sdcard_root_realpath(const char *root) {
     char resolved[PATH_MAX];
 
@@ -104,6 +106,23 @@ static void test_static_platform_metadata(void) {
     assert_known_icon("VIC", "VIC20");
 }
 
+static void test_portmaster_platform_metadata(void) {
+    const cs_platform_info *info = cs_platform_find("PORTS");
+
+    assert(info != NULL);
+    assert(strcmp(info->name, "Ports") == 0);
+    assert(strcmp(info->group, "PortMaster") == 0);
+    assert(strcmp(info->icon, "PORTMASTER") == 0);
+    assert(strcmp(info->rom_directory, "Ports (PORTS)") == 0);
+    assert(cs_platform_supports_resource(info, "roms") == 1);
+    assert(cs_platform_supports_resource(info, "saves") == 0);
+    assert(cs_platform_supports_resource(info, "states") == 0);
+    assert(cs_platform_supports_resource(info, "bios") == 0);
+    assert(cs_platform_supports_resource(info, "overlays") == 0);
+    assert(cs_platform_supports_resource(info, "cheats") == 0);
+    assert(cs_platform_allows_hidden_rom_entries(info) == 1);
+}
+
 static void test_parse_rejects_unsafe_custom_platform_codes(void) {
     char system_name[128];
     char system_code[32];
@@ -158,6 +177,50 @@ static void test_alias_rom_directories_are_resolved(void) {
     assert(strcmp(resolved.rom_directory, "Nintendo Entertainment System (NES)") == 0);
 
     assert(rmdir(nes_dir) == 0);
+    assert(rmdir(roms_dir) == 0);
+    assert(rmdir(root) == 0);
+}
+
+static void test_shortcut_directories_are_excluded_from_discovery(void) {
+    char template[] = "/tmp/cs-platforms-shortcuts-XXXXXX";
+    char *root;
+    char roms_dir[PATH_MAX];
+    char shortcut_dir[PATH_MAX];
+    char shortcut_marker[PATH_MAX];
+    cs_paths paths = {0};
+    cs_platform_info discovered[256];
+    cs_platform_info resolved = {0};
+    size_t discovered_count = 0;
+    const cs_platform_info *md;
+
+    root = mkdtemp(template);
+    assert(root != NULL);
+    assert(snprintf(roms_dir, sizeof(roms_dir), "%s/Roms", root) > 0);
+    assert(snprintf(shortcut_dir, sizeof(shortcut_dir), "%s/Roms/0) Sonic - Spindash (MD)", root) > 0);
+    assert(snprintf(shortcut_marker, sizeof(shortcut_marker), "%s/.shortcut", shortcut_dir) > 0);
+
+    make_dir(roms_dir);
+    make_dir(shortcut_dir);
+    write_file(shortcut_marker, "Sonic - Spindash");
+
+    set_sdcard_root_realpath(root);
+    assert(cs_paths_init(&paths) == 0);
+    assert(cs_platform_discover(&paths,
+                                discovered,
+                                sizeof(discovered) / sizeof(discovered[0]),
+                                &discovered_count)
+           == 0);
+
+    md = find_platform_entry(discovered, discovered_count, "MD");
+    assert(md != NULL);
+    assert(strcmp(md->rom_directory, "Sega Genesis (MD)") == 0);
+    assert(cs_platform_resolve(&paths, "MD", &resolved) == 0);
+    assert(strcmp(resolved.rom_directory, "Sega Genesis (MD)") == 0);
+    assert(cs_platform_is_shortcut_directory("0) Sonic - Spindash (MD)", shortcut_dir) == 1);
+    assert(cs_platform_is_shortcut_directory("\xE2\x98\x85 Old Shortcut (MD)", "/tmp/legacy-shortcut") == 1);
+
+    assert(remove(shortcut_marker) == 0);
+    assert(rmdir(shortcut_dir) == 0);
     assert(rmdir(roms_dir) == 0);
     assert(rmdir(root) == 0);
 }
@@ -282,8 +345,10 @@ static void test_custom_platform_icons_are_mapped(void) {
 
 int main(void) {
     test_static_platform_metadata();
+    test_portmaster_platform_metadata();
     test_parse_rejects_unsafe_custom_platform_codes();
     test_alias_rom_directories_are_resolved();
+    test_shortcut_directories_are_excluded_from_discovery();
     test_textures_directory_is_exposed_as_custom_platform();
     test_custom_platform_icons_are_mapped();
     return 0;

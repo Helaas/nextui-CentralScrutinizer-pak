@@ -136,8 +136,22 @@ static int cs_browser_path_is_art(const char *relative_path) {
     return strncmp(relative_path, ".media/", 7) == 0 || strstr(relative_path, "/.media/") != NULL;
 }
 
-static int cs_browser_should_include_entry(cs_browser_scope scope, const char *name) {
+static int cs_browser_should_include_hidden_rom_entry(const cs_platform_info *platform, const char *name) {
+    if (!platform || !name) {
+        return 0;
+    }
+
+    return cs_platform_allows_hidden_rom_entries(platform) && strcmp(name, ".ports") == 0;
+}
+
+static int cs_browser_should_include_entry(cs_browser_scope scope,
+                                           const cs_platform_info *platform,
+                                           const char *name,
+                                           const char *absolute_path) {
     if (!name || name[0] == '\0') {
+        return 0;
+    }
+    if (scope == CS_SCOPE_ROMS && absolute_path && cs_platform_is_shortcut_directory(name, absolute_path)) {
         return 0;
     }
     if (name[0] != '.') {
@@ -147,7 +161,7 @@ static int cs_browser_should_include_entry(cs_browser_scope scope, const char *n
         return 1;
     }
 
-    return strcmp(name, ".media") == 0;
+    return strcmp(name, ".media") == 0 || (scope == CS_SCOPE_ROMS && cs_browser_should_include_hidden_rom_entry(platform, name));
 }
 
 static const char *cs_scope_label(cs_browser_scope scope) {
@@ -374,12 +388,31 @@ int cs_browser_scope_allows_hidden(cs_browser_scope scope) {
     return scope == CS_SCOPE_FILES;
 }
 
+int cs_browser_scope_supported_for_platform(const cs_platform_info *platform, cs_browser_scope scope) {
+    const char *scope_name;
+
+    if (scope == CS_SCOPE_FILES) {
+        return 1;
+    }
+
+    scope_name = cs_browser_scope_name(scope);
+    return scope_name ? cs_platform_supports_resource(platform, scope_name) : 0;
+}
+
+int cs_browser_scope_allows_hidden_for_platform(cs_browser_scope scope, const cs_platform_info *platform) {
+    return cs_browser_scope_allows_hidden(scope)
+           || (scope == CS_SCOPE_ROMS && cs_platform_allows_hidden_rom_entries(platform));
+}
+
 int cs_browser_root_for_scope(const cs_paths *paths,
                               cs_browser_scope scope,
                               const cs_platform_info *platform,
                               char *root,
                               size_t root_size) {
     if (!paths || !root || root_size == 0) {
+        return -1;
+    }
+    if (scope != CS_SCOPE_FILES && !cs_browser_scope_supported_for_platform(platform, scope)) {
         return -1;
     }
 
@@ -456,7 +489,7 @@ int cs_browser_list(const cs_paths *paths,
         return -1;
     }
 
-    if (cs_browser_scope_allows_hidden(scope)) {
+    if (cs_browser_scope_allows_hidden_for_platform(scope, platform)) {
         path_flags |= CS_PATH_FLAG_ALLOW_HIDDEN;
     }
     if (cs_resolve_path_under_root_with_flags(root,
@@ -501,7 +534,10 @@ int cs_browser_list(const cs_paths *paths,
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
-        if (!cs_browser_should_include_entry(scope, entry->d_name)) {
+        if (cs_join_path(entry_absolute, sizeof(entry_absolute), target_path, entry->d_name) != 0) {
+            continue;
+        }
+        if (!cs_browser_should_include_entry(scope, platform, entry->d_name, entry_absolute)) {
             continue;
         }
 
@@ -518,9 +554,6 @@ int cs_browser_list(const cs_paths *paths,
             continue;
         }
 
-        if (cs_join_path(entry_absolute, sizeof(entry_absolute), target_path, entry->d_name) != 0) {
-            continue;
-        }
         if (fstatat(dirfd(dir), entry->d_name, &st, AT_SYMLINK_NOFOLLOW) != 0) {
             continue;
         }

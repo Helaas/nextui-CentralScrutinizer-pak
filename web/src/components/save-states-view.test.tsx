@@ -14,6 +14,17 @@ vi.mock("../lib/api", () => mockApi);
 
 import { SaveStatesView } from "./save-states-view";
 
+function supportedResources() {
+  return {
+    roms: true,
+    saves: true,
+    states: true,
+    bios: true,
+    overlays: true,
+    cheats: true,
+  };
+}
+
 describe("SaveStatesView", () => {
   afterEach(() => {
     cleanup();
@@ -66,6 +77,7 @@ describe("SaveStatesView", () => {
           romPath: "Roms/Game Boy Advance (GBA)",
           savePath: "Saves/GBA",
           biosPath: "Bios/GBA",
+          supportedResources: supportedResources(),
           counts: { roms: 2, saves: 1, states: 1, bios: 0, overlays: 0, cheats: 0 },
         }}
       />,
@@ -134,6 +146,7 @@ describe("SaveStatesView", () => {
           romPath: "Roms/Game Boy Advance (GBA)",
           savePath: "Saves/GBA",
           biosPath: "Bios/GBA",
+          supportedResources: supportedResources(),
           counts: { roms: 2, saves: 1, states: 1, bios: 0, overlays: 0, cheats: 0 },
         }}
       />,
@@ -203,6 +216,7 @@ describe("SaveStatesView", () => {
           romPath: "Roms/Game Boy Advance (GBA)",
           savePath: "Saves/GBA",
           biosPath: "Bios/GBA",
+          supportedResources: supportedResources(),
           counts: { roms: 2, saves: 1, states: 1, bios: 0, overlays: 0, cheats: 0 },
         }}
       />,
@@ -257,6 +271,7 @@ describe("SaveStatesView", () => {
           romPath: "Roms/Game Boy Advance (GBA)",
           savePath: "Saves/GBA",
           biosPath: "Bios/GBA",
+          supportedResources: supportedResources(),
           counts: { roms: 2, saves: 1, states: 1, bios: 0, overlays: 0, cheats: 0 },
         }}
       />,

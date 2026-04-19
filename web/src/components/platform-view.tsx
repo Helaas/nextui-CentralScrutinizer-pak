@@ -1,4 +1,4 @@
-import type { PlatformSummary } from "../lib/types";
+import type { PlatformResource, PlatformSummary } from "../lib/types";
 import { ResourceCardGrid } from "./resource-card-grid";
 
 export function PlatformView({
@@ -8,7 +8,7 @@ export function PlatformView({
 }: {
   platform: PlatformSummary;
   onBack: () => void;
-  onOpenResource: (resource: "roms" | "saves" | "states" | "bios" | "overlays" | "cheats") => void;
+  onOpenResource: (resource: PlatformResource) => void;
 }) {
   return (
     <div className="space-y-6">

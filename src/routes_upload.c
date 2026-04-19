@@ -165,7 +165,8 @@ static int cs_prepare_upload_metadata(cs_upload_request *state) {
         }
         platform = &resolved_platform;
     }
-    state->path_flags = cs_browser_scope_allows_hidden(scope) ? CS_PATH_FLAG_ALLOW_HIDDEN : 0;
+    state->path_flags =
+        cs_browser_scope_allows_hidden_for_platform(scope, platform) ? CS_PATH_FLAG_ALLOW_HIDDEN : 0;
     if (cs_browser_root_for_scope(&state->app->paths,
                                   scope,
                                   platform,

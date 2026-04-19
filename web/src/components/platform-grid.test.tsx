@@ -3,6 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 
 import { PlatformGrid } from "./platform-grid";
 
+function supportedResources() {
+  return {
+    roms: true,
+    saves: true,
+    states: true,
+    bios: true,
+    overlays: true,
+    cheats: true,
+  };
+}
+
 describe("PlatformGrid", () => {
   it("renders grouped platform cards", () => {
     render(
@@ -20,6 +31,7 @@ describe("PlatformGrid", () => {
                 romPath: "Roms/Game Boy Advance (GBA)",
                 savePath: "Saves/GBA",
                 biosPath: "Bios/GBA",
+                supportedResources: supportedResources(),
                 counts: { roms: 3, saves: 1, states: 2, bios: 0, overlays: 0, cheats: 0 },
               },
             ],
@@ -50,6 +62,7 @@ describe("PlatformGrid", () => {
                 romPath: "Roms/Game Boy Advance (GBA)",
                 savePath: "Saves/GBA",
                 biosPath: "Bios/GBA",
+                supportedResources: supportedResources(),
                 counts: { roms: 3, saves: 1, states: 0, bios: 0, overlays: 0, cheats: 0 },
               },
               {
@@ -61,6 +74,7 @@ describe("PlatformGrid", () => {
                 romPath: "Roms/Game Boy Advance (MGBA)",
                 savePath: "Saves/MGBA",
                 biosPath: "Bios/MGBA",
+                supportedResources: supportedResources(),
                 counts: { roms: 4, saves: 2, states: 1, bios: 0, overlays: 0, cheats: 0 },
               },
             ],

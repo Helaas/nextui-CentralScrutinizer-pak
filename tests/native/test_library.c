@@ -403,6 +403,67 @@ static void test_large_listing_sets_truncated_flag(void) {
     assert(rmdir(root) == 0);
 }
 
+static void test_ports_browser_supports_hidden_ports_and_rejects_other_resources(void) {
+    cs_paths paths = {0};
+    cs_browser_result result = {0};
+    char template[] = "/tmp/cs-library-ports-XXXXXX";
+    char *root;
+    char roms_dir[PATH_MAX];
+    char ports_dir[PATH_MAX];
+    char hidden_ports_dir[PATH_MAX];
+    char shortcut_dir[PATH_MAX];
+    char shortcut_marker[PATH_MAX];
+    char root_script[PATH_MAX];
+    char port_manifest[PATH_MAX];
+    const cs_platform_info *ports = cs_platform_find("PORTS");
+
+    assert(ports != NULL);
+    root = mkdtemp(template);
+    assert(root != NULL);
+
+    assert(snprintf(roms_dir, sizeof(roms_dir), "%s/Roms", root) > 0);
+    assert(snprintf(ports_dir, sizeof(ports_dir), "%s/Roms/Ports (PORTS)", root) > 0);
+    assert(snprintf(hidden_ports_dir, sizeof(hidden_ports_dir), "%s/Roms/Ports (PORTS)/.ports", root) > 0);
+    assert(snprintf(shortcut_dir, sizeof(shortcut_dir), "%s/Roms/Ports (PORTS)/0) Search (SHORTCUT)", root) > 0);
+    assert(snprintf(shortcut_marker, sizeof(shortcut_marker), "%s/.shortcut", shortcut_dir) > 0);
+    assert(snprintf(root_script, sizeof(root_script), "%s/PokeMMO.sh", ports_dir) > 0);
+    assert(snprintf(port_manifest, sizeof(port_manifest), "%s/port.json", hidden_ports_dir) > 0);
+
+    make_dir(roms_dir);
+    make_dir(ports_dir);
+    make_dir(hidden_ports_dir);
+    make_dir(shortcut_dir);
+    write_file(shortcut_marker, "Search");
+    write_file(root_script, "launch");
+    write_file(port_manifest, "{}");
+
+    set_sdcard_root_realpath(root);
+    assert(cs_paths_init(&paths) == 0);
+
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, ports, "", &result) == 0);
+    assert(find_entry(&result, ".ports") != NULL);
+    assert(find_entry(&result, "PokeMMO.sh") != NULL);
+    assert(find_entry(&result, "0) Search (SHORTCUT)") == NULL);
+
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, ports, ".ports", &result) == 0);
+    assert(strcmp(result.path, ".ports") == 0);
+    assert(find_entry(&result, "port.json") != NULL);
+
+    assert(cs_browser_list(&paths, CS_SCOPE_SAVES, ports, "", &result) == -1);
+    assert(cs_browser_list(&paths, CS_SCOPE_BIOS, ports, "", &result) == -1);
+    assert(cs_browser_list(&paths, CS_SCOPE_OVERLAYS, ports, "", &result) == -1);
+    assert(cs_browser_list(&paths, CS_SCOPE_CHEATS, ports, "", &result) == -1);
+
+    assert(remove(port_manifest) == 0);
+    assert(remove(root_script) == 0);
+    assert(remove(shortcut_marker) == 0);
+    assert(rmdir(shortcut_dir) == 0);
+    assert(rmdir(hidden_ports_dir) == 0);
+    assert(rmdir(ports_dir) == 0);
+    assert(rmdir(roms_dir) == 0);
+    assert(rmdir(root) == 0);
+}
+
 int main(void) {
     test_fixture_browser_scopes_and_rejection();
     test_rom_thumbnail_resolution_is_png_only();
@@ -411,5 +472,6 @@ int main(void) {
     test_symlinked_absolute_sdcard_root_is_canonicalized_for_files_scope();
     test_symlinked_roms_parent_is_rejected();
     test_large_listing_sets_truncated_flag();
+    test_ports_browser_supports_hidden_ports_and_rejects_other_resources();
     return 0;
 }

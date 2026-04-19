@@ -1,4 +1,5 @@
 import type { PlatformSummary } from "../lib/types";
+import { formatPlatformCardSummary } from "../lib/platform-display";
 
 export function PlatformCard({
   displayName,
@@ -25,9 +26,7 @@ export function PlatformCard({
       />
       <div className="min-w-0 flex-1">
         <p className="truncate font-semibold group-hover:text-[var(--accent)]">{displayName}</p>
-        <p className="mt-1 text-xs text-[var(--muted)]">
-          {platform.counts.roms} ROMs · {platform.counts.saves} Saves · {platform.counts.states} States · {platform.counts.bios} BIOS
-        </p>
+        <p className="mt-1 text-xs text-[var(--muted)]">{formatPlatformCardSummary(platform)}</p>
       </div>
     </button>
   );

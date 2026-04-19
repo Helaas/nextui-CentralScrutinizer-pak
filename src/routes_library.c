@@ -254,6 +254,9 @@ static int cs_count_files_recursive(const char *path, int allow_hidden, int skip
             continue;
         }
         if (S_ISDIR(st.st_mode)) {
+            if (cs_platform_is_shortcut_directory(entry->d_name, child)) {
+                continue;
+            }
             total += cs_count_files_recursive(child, allow_hidden, skip_media_dir);
         } else if (S_ISREG(st.st_mode)) {
             total += 1;
@@ -279,26 +282,41 @@ static int cs_stream_platform_object(struct mg_connection *conn,
     int bios_count = 0;
     int overlay_count = 0;
     int cheat_count = 0;
+    int supports_roms;
+    int supports_saves;
+    int supports_states;
+    int supports_bios;
+    int supports_overlays;
+    int supports_cheats;
 
     if (!conn || !paths || !platform || !first_platform) {
         return -1;
     }
-    if (cs_browser_root_for_scope(paths, CS_SCOPE_ROMS, platform, rom_root, sizeof(rom_root)) == 0) {
+    supports_roms = cs_platform_supports_resource(platform, "roms");
+    supports_saves = cs_platform_supports_resource(platform, "saves");
+    supports_states = cs_platform_supports_resource(platform, "states");
+    supports_bios = cs_platform_supports_resource(platform, "bios");
+    supports_overlays = cs_platform_supports_resource(platform, "overlays");
+    supports_cheats = cs_platform_supports_resource(platform, "cheats");
+
+    if (supports_roms && cs_browser_root_for_scope(paths, CS_SCOPE_ROMS, platform, rom_root, sizeof(rom_root)) == 0) {
         rom_count = cs_count_files_recursive(rom_root, 0, 1);
     }
-    if (cs_browser_root_for_scope(paths, CS_SCOPE_SAVES, platform, save_root, sizeof(save_root)) == 0) {
+    if (supports_saves && cs_browser_root_for_scope(paths, CS_SCOPE_SAVES, platform, save_root, sizeof(save_root)) == 0) {
         save_count = cs_count_files_recursive(save_root, 0, 0);
     }
-    if (cs_states_collect(paths, platform, NULL, 0, &state_count, NULL) != 0) {
+    if (!supports_states || cs_states_collect(paths, platform, NULL, 0, &state_count, NULL) != 0) {
         state_count = 0;
     }
-    if (cs_browser_root_for_scope(paths, CS_SCOPE_BIOS, platform, bios_root, sizeof(bios_root)) == 0) {
+    if (supports_bios && cs_browser_root_for_scope(paths, CS_SCOPE_BIOS, platform, bios_root, sizeof(bios_root)) == 0) {
         bios_count = cs_count_files_recursive(bios_root, 0, 0);
     }
-    if (cs_browser_root_for_scope(paths, CS_SCOPE_OVERLAYS, platform, overlays_root, sizeof(overlays_root)) == 0) {
+    if (supports_overlays
+        && cs_browser_root_for_scope(paths, CS_SCOPE_OVERLAYS, platform, overlays_root, sizeof(overlays_root)) == 0) {
         overlay_count = cs_count_files_recursive(overlays_root, 0, 0);
     }
-    if (cs_browser_root_for_scope(paths, CS_SCOPE_CHEATS, platform, cheats_root, sizeof(cheats_root)) == 0) {
+    if (supports_cheats
+        && cs_browser_root_for_scope(paths, CS_SCOPE_CHEATS, platform, cheats_root, sizeof(cheats_root)) == 0) {
         cheat_count = cs_count_files_recursive(cheats_root, 0, 0);
     }
 
@@ -321,7 +339,19 @@ static int cs_stream_platform_object(struct mg_connection *conn,
         || cs_stream_escaped_string(conn, platform->primary_code) != 0
         || cs_stream_literal(conn, "\",\"biosPath\":\"Bios/") != 0
         || cs_stream_escaped_string(conn, platform->primary_code) != 0
-        || cs_stream_literal(conn, "\",\"counts\":{\"roms\":") != 0
+        || cs_stream_literal(conn, "\",\"supportedResources\":{\"roms\":") != 0
+        || cs_stream_literal(conn, supports_roms ? "true" : "false") != 0
+        || cs_stream_literal(conn, ",\"saves\":") != 0
+        || cs_stream_literal(conn, supports_saves ? "true" : "false") != 0
+        || cs_stream_literal(conn, ",\"states\":") != 0
+        || cs_stream_literal(conn, supports_states ? "true" : "false") != 0
+        || cs_stream_literal(conn, ",\"bios\":") != 0
+        || cs_stream_literal(conn, supports_bios ? "true" : "false") != 0
+        || cs_stream_literal(conn, ",\"overlays\":") != 0
+        || cs_stream_literal(conn, supports_overlays ? "true" : "false") != 0
+        || cs_stream_literal(conn, ",\"cheats\":") != 0
+        || cs_stream_literal(conn, supports_cheats ? "true" : "false") != 0
+        || cs_stream_literal(conn, "},\"counts\":{\"roms\":") != 0
         || cs_stream_unsigned(conn, (unsigned long long) rom_count) != 0
         || cs_stream_literal(conn, ",\"saves\":") != 0
         || cs_stream_unsigned(conn, (unsigned long long) save_count) != 0
@@ -454,6 +484,9 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
     if (cs_browser_scope_requires_platform(scope)) {
         if (cs_platform_resolve(&app->paths, tag_value, &resolved_platform) != 0) {
             return cs_write_json(conn, 404, "Not Found", "{\"error\":\"platform_not_found\"}");
+        }
+        if (!cs_browser_scope_supported_for_platform(&resolved_platform, scope)) {
+            return cs_write_json(conn, 404, "Not Found", "{\"error\":\"scope_not_supported\"}");
         }
         platform = &resolved_platform;
     }

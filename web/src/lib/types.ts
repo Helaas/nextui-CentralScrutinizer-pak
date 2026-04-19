@@ -13,6 +13,10 @@ export type StatusResponse = {
   trustedCount: number;
 };
 
+export type PlatformResource = "roms" | "saves" | "states" | "bios" | "overlays" | "cheats";
+
+export type SupportedResources = Record<PlatformResource, boolean>;
+
 export type PlatformSummary = {
   tag: string;
   name: string;
@@ -22,6 +26,7 @@ export type PlatformSummary = {
   romPath: string;
   savePath: string;
   biosPath: string;
+  supportedResources: SupportedResources;
   counts: {
     roms: number;
     saves: number;

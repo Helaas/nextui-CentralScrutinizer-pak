@@ -85,6 +85,18 @@ function pairedSession(terminal = true) {
   return { paired: true, csrf: "csrf-token", trustedCount: 1, capabilities: { terminal } };
 }
 
+function supportedResources(overrides: Partial<Record<"roms" | "saves" | "states" | "bios" | "overlays" | "cheats", boolean>> = {}) {
+  return {
+    roms: true,
+    saves: true,
+    states: true,
+    bios: true,
+    overlays: true,
+    cheats: true,
+    ...overrides,
+  };
+}
+
 function platformGroups() {
   return {
     groups: [
@@ -100,6 +112,7 @@ function platformGroups() {
             romPath: "Roms/Game Boy Advance (GBA)",
             savePath: "Saves/GBA",
             biosPath: "Bios/GBA",
+            supportedResources: supportedResources(),
             counts: { roms: 2, saves: 1, states: 3, bios: 0, overlays: 0, cheats: 0 },
           },
         ],
@@ -123,6 +136,7 @@ function duplicatePlatformGroups() {
             romPath: "Roms/Game Boy Advance (GBA)",
             savePath: "Saves/GBA",
             biosPath: "Bios/GBA",
+            supportedResources: supportedResources(),
             counts: { roms: 2, saves: 1, states: 0, bios: 0, overlays: 0, cheats: 0 },
           },
           {
@@ -134,7 +148,38 @@ function duplicatePlatformGroups() {
             romPath: "Roms/Game Boy Advance (MGBA)",
             savePath: "Saves/MGBA",
             biosPath: "Bios/MGBA",
+            supportedResources: supportedResources(),
             counts: { roms: 1, saves: 0, states: 0, bios: 0, overlays: 0, cheats: 0 },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function portsPlatformGroups() {
+  return {
+    groups: [
+      {
+        name: "PortMaster",
+        platforms: [
+          {
+            tag: "PORTS",
+            name: "Ports",
+            group: "PortMaster",
+            icon: "PORTMASTER",
+            isCustom: false,
+            romPath: "Roms/Ports (PORTS)",
+            savePath: "Saves/PORTS",
+            biosPath: "Bios/PORTS",
+            supportedResources: supportedResources({
+              saves: false,
+              states: false,
+              bios: false,
+              overlays: false,
+              cheats: false,
+            }),
+            counts: { roms: 2, saves: 0, states: 0, bios: 0, overlays: 0, cheats: 0 },
           },
         ],
       },
@@ -310,6 +355,25 @@ describe("Page", () => {
 
     expect(await screen.findByText("Mock save states for Game Boy Advance")).toBeTruthy();
     expect(window.location.search).toBe("?view=states&tag=GBA");
+  });
+
+  it("shows only ROMs for Ports and rewrites unsupported routes back to the platform view", async () => {
+    window.history.replaceState(null, "", "/?view=states&tag=PORTS");
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(portsPlatformGroups());
+
+    render(<Page />);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Ports" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "ROMs" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save States" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Saves" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "BIOS" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Overlays" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cheats" })).toBeNull();
+    await waitFor(() => {
+      expect(window.location.search).toBe("?view=platform&tag=PORTS");
+    });
   });
 
   it("keeps duplicate platform variants distinct in the library and header", async () => {
