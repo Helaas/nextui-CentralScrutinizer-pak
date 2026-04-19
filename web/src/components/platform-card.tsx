@@ -27,6 +27,11 @@ export function PlatformCard({
       <div className="min-w-0 flex-1">
         <p className="truncate font-semibold group-hover:text-[var(--accent)]">{displayName}</p>
         <p className="mt-1 text-xs text-[var(--muted)]">{formatPlatformCardSummary(platform)}</p>
+        {platform.requiresEmulator && !platform.emulatorInstalled ? (
+          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-amber-500" title={platform.emulatorWarning ?? undefined}>
+            Missing emulator
+          </p>
+        ) : null}
       </div>
     </button>
   );

@@ -110,6 +110,17 @@ function supportedResources(overrides: Partial<Record<"roms" | "saves" | "states
   };
 }
 
+function emulatorState(
+  overrides: Partial<{ requiresEmulator: boolean; emulatorInstalled: boolean; emulatorWarning: string | null }> = {},
+) {
+  return {
+    requiresEmulator: true,
+    emulatorInstalled: true,
+    emulatorWarning: null,
+    ...overrides,
+  };
+}
+
 function platformGroups() {
   return {
     groups: [
@@ -122,6 +133,7 @@ function platformGroups() {
             group: "Nintendo",
             icon: "GBA",
             isCustom: false,
+            ...emulatorState(),
             romPath: "Roms/Game Boy Advance (GBA)",
             savePath: "Saves/GBA",
             biosPath: "Bios/GBA",
@@ -146,6 +158,7 @@ function duplicatePlatformGroups() {
             group: "Nintendo",
             icon: "GBA",
             isCustom: false,
+            ...emulatorState(),
             romPath: "Roms/Game Boy Advance (GBA)",
             savePath: "Saves/GBA",
             biosPath: "Bios/GBA",
@@ -158,6 +171,7 @@ function duplicatePlatformGroups() {
             group: "Nintendo",
             icon: "MGBA",
             isCustom: false,
+            ...emulatorState(),
             romPath: "Roms/Game Boy Advance (MGBA)",
             savePath: "Saves/MGBA",
             biosPath: "Bios/MGBA",
@@ -182,6 +196,7 @@ function portsPlatformGroups() {
             group: "PortMaster",
             icon: "PORTMASTER",
             isCustom: false,
+            ...emulatorState({ requiresEmulator: false }),
             romPath: "Roms/Ports (PORTS)",
             savePath: "Saves/PORTS",
             biosPath: "Bios/PORTS",
@@ -193,6 +208,50 @@ function portsPlatformGroups() {
               cheats: false,
             }),
             counts: { roms: 2, saves: 0, states: 0, bios: 0, overlays: 0, cheats: 0 },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function platformGroupsWithPorts() {
+  return {
+    groups: [...platformGroups().groups, ...portsPlatformGroups().groups],
+  };
+}
+
+function multipleMissingPlatformGroups() {
+  return {
+    groups: [
+      {
+        name: "Nintendo",
+        platforms: [
+          {
+            tag: "GBA",
+            name: "Game Boy Advance",
+            group: "Nintendo",
+            icon: "GBA",
+            isCustom: false,
+            ...emulatorState({ emulatorInstalled: false, emulatorWarning: "Missing GBA emulator." }),
+            romPath: "Roms/Game Boy Advance (GBA)",
+            savePath: "Saves/GBA",
+            biosPath: "Bios/GBA",
+            supportedResources: supportedResources(),
+            counts: { roms: 2, saves: 1, states: 0, bios: 0, overlays: 0, cheats: 0 },
+          },
+          {
+            tag: "MGBA",
+            name: "Game Boy Advance",
+            group: "Nintendo",
+            icon: "MGBA",
+            isCustom: false,
+            ...emulatorState({ emulatorInstalled: false, emulatorWarning: "Missing MGBA emulator." }),
+            romPath: "Roms/Game Boy Advance (MGBA)",
+            savePath: "Saves/MGBA",
+            biosPath: "Bios/MGBA",
+            supportedResources: supportedResources(),
+            counts: { roms: 1, saves: 0, states: 0, bios: 0, overlays: 0, cheats: 0 },
           },
         ],
       },
@@ -376,6 +435,80 @@ describe("Page", () => {
     expect(screen.getByRole("link", { name: "Download Pokemon Emerald.gba" })).toBeTruthy();
     expect(screen.getByPlaceholderText("Search in current folder")).toBeTruthy();
     expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+
+  it("warns when a visible console is missing its emulator", async () => {
+    window.history.replaceState(null, "", "/?view=dashboard&emu=all");
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue({
+      groups: [
+        {
+          name: "Nintendo",
+          platforms: [
+            {
+              ...platformGroups().groups[0].platforms[0],
+              ...emulatorState({ emulatorInstalled: false, emulatorWarning: "No emulator is installed for Game Boy Advance (GBA)." }),
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<Page />);
+
+    expect(await screen.findByText("Game Boy Advance")).toBeTruthy();
+    expect(screen.getByText("Missing emulator")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Console filter" })).toHaveProperty("value", "all");
+  });
+
+  it("shows a missing-emulator banner in all mode and clears it after switching filters", async () => {
+    window.history.replaceState(null, "", "/?view=dashboard&emu=all");
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(multipleMissingPlatformGroups());
+
+    render(<Page />);
+
+    expect(await screen.findByText("Game Boy Advance (GBA)")).toBeTruthy();
+    expect(
+      screen.getByText(
+        /2 consoles have no installed emulator: Game Boy Advance \(GBA\), Game Boy Advance \(MGBA\)\./i,
+      ),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show installed only" }));
+
+    expect(window.location.search).toBe("?view=dashboard");
+    expect(screen.queryByText(/2 consoles have no installed emulator/i)).toBeNull();
+  });
+
+  it("filters the dashboard to installed emulators and keeps Ports visible", async () => {
+    window.history.replaceState(null, "", "/?view=dashboard&emu=all");
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue({
+      groups: [
+        {
+          name: "Nintendo",
+          platforms: [
+            {
+              ...platformGroups().groups[0].platforms[0],
+              ...emulatorState({ emulatorInstalled: false, emulatorWarning: "Missing GBA emulator." }),
+            },
+          ],
+        },
+        ...portsPlatformGroups().groups,
+      ],
+    });
+
+    render(<Page />);
+
+    expect(await screen.findByText("Game Boy Advance")).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "Console filter" }), {
+      target: { value: "installed" },
+    });
+
+    expect(window.location.search).toBe("?view=dashboard");
+    expect(screen.queryByRole("button", { name: /Game Boy Advance/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /Ports/i })).toBeTruthy();
   });
 
   it("navigates into the dedicated save-states view", async () => {

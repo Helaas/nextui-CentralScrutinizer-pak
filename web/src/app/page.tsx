@@ -44,6 +44,7 @@ import {
 } from "../lib/platform-display";
 import {
   getDestination,
+  readLibraryEmuFilter,
   readShowEmptyPlatforms,
   readViewState,
   type AppViewState,
@@ -55,6 +56,7 @@ import type {
   BrowserResponse,
   BrowserScope,
   FileSearchResult,
+  LibraryEmuFilter,
   PlatformGroup,
   PlatformSummary,
   PlatformResource,
@@ -180,6 +182,9 @@ export default function Page() {
   const [showEmptyPlatforms, setShowEmptyPlatforms] = useState(() =>
     typeof window === "undefined" ? false : readShowEmptyPlatforms(window.location.search),
   );
+  const [libraryEmuFilter, setLibraryEmuFilter] = useState<LibraryEmuFilter>(() =>
+    typeof window === "undefined" ? "installed" : readLibraryEmuFilter(window.location.search),
+  );
   const [platformGroups, setPlatformGroups] = useState<PlatformGroup[]>([]);
   const [browserResponse, setBrowserResponse] = useState<BrowserResponse | null>(null);
   const [fileSearchResults, setFileSearchResults] = useState<FileSearchResult[] | null>(null);
@@ -209,7 +214,7 @@ export default function Page() {
     setViewState(next);
     setNotice(null);
     if (typeof window !== "undefined") {
-      const url = writeViewState(next, { showEmptyPlatforms });
+      const url = writeViewState(next, { showEmptyPlatforms, libraryEmuFilter });
 
       if (replace) {
         window.history.replaceState(null, "", url);
@@ -294,6 +299,7 @@ export default function Page() {
     const handlePopState = () => {
       setViewState(readViewState(window.location.search));
       setShowEmptyPlatforms(readShowEmptyPlatforms(window.location.search));
+      setLibraryEmuFilter(readLibraryEmuFilter(window.location.search));
       setNotice(null);
     };
 
@@ -587,6 +593,7 @@ export default function Page() {
   const visiblePlatformGroups = filterPlatformGroups(
     platformGroups,
     searchByContext.library,
+    libraryEmuFilter,
     showEmptyPlatforms,
   );
   const visiblePlatformDisplayNames = createPlatformDisplayNames(
@@ -638,7 +645,14 @@ export default function Page() {
   function updateShowEmpty(value: boolean) {
     setShowEmptyPlatforms(value);
     if (typeof window !== "undefined" && getDestination(viewState) === "library") {
-      window.history.replaceState(null, "", writeViewState(viewState, { showEmptyPlatforms: value }));
+      window.history.replaceState(null, "", writeViewState(viewState, { showEmptyPlatforms: value, libraryEmuFilter }));
+    }
+  }
+
+  function updateLibraryEmuFilter(value: LibraryEmuFilter) {
+    setLibraryEmuFilter(value);
+    if (typeof window !== "undefined" && getDestination(viewState) === "library") {
+      window.history.replaceState(null, "", writeViewState(viewState, { showEmptyPlatforms, libraryEmuFilter: value }));
     }
   }
 
@@ -1213,7 +1227,9 @@ export default function Page() {
       />
     ) : (
       <DashboardShell
+        emuFilter={libraryEmuFilter}
         groups={visiblePlatformGroups}
+        onChangeEmuFilter={updateLibraryEmuFilter}
         onSelectPlatform={(tag) => {
           navigate({ view: "platform", destination: "library", tag });
         }}

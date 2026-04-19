@@ -5,12 +5,14 @@
 
 #include "cs_paths.h"
 
+#define CS_PLATFORM_CODE_MAX 32
+
 typedef struct cs_platform_info {
-    char tag[32];
+    char tag[CS_PLATFORM_CODE_MAX];
     char name[128];
     char group[64];
     char icon[32];
-    char primary_code[32];
+    char primary_code[CS_PLATFORM_CODE_MAX];
     char rom_directory[256];
     int is_custom;
 } cs_platform_info;
@@ -30,7 +32,15 @@ int cs_platform_parse_rom_directory(const char *dir_name,
                                     char *system_code,
                                     size_t system_code_size);
 int cs_platform_supports_resource(const cs_platform_info *platform, const char *resource);
+int cs_platform_requires_emulator(const cs_platform_info *platform);
 int cs_platform_allows_hidden_rom_entries(const cs_platform_info *platform);
 int cs_platform_is_shortcut_directory(const char *name, const char *absolute_path);
+int cs_platform_collect_installed_emulators(const cs_paths *paths,
+                                            char codes[][CS_PLATFORM_CODE_MAX],
+                                            size_t capacity,
+                                            size_t *count_out);
+int cs_platform_has_installed_emulator(const cs_platform_info *platform,
+                                       const char codes[][CS_PLATFORM_CODE_MAX],
+                                       size_t code_count);
 
 #endif

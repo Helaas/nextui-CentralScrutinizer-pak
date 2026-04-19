@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getDestination, readShowEmptyPlatforms, readViewState, writeViewState } from "./navigation";
+import { getDestination, readLibraryEmuFilter, readShowEmptyPlatforms, readViewState, writeViewState } from "./navigation";
 
 describe("navigation", () => {
   it("maps the legacy files route into the tools file browser", () => {
@@ -27,6 +27,9 @@ describe("navigation", () => {
     expect(writeViewState({ view: "dashboard", destination: "library" })).toBe("?view=dashboard");
     expect(writeViewState({ view: "dashboard", destination: "library" }, { showEmptyPlatforms: true })).toBe(
       "?view=dashboard&showEmpty=1",
+    );
+    expect(writeViewState({ view: "dashboard", destination: "library" }, { libraryEmuFilter: "all" })).toBe(
+      "?view=dashboard&emu=all",
     );
     expect(writeViewState({ view: "tools", destination: "tools" })).toBe("?view=tools");
     expect(writeViewState({ view: "states", destination: "library", tag: "GBA" })).toBe("?view=states&tag=GBA");
@@ -63,5 +66,11 @@ describe("navigation", () => {
   it("reads the empty-platform toggle from the url", () => {
     expect(readShowEmptyPlatforms("?view=dashboard&showEmpty=1")).toBe(true);
     expect(readShowEmptyPlatforms("?view=dashboard")).toBe(false);
+  });
+
+  it("reads the emulator filter from the url", () => {
+    expect(readLibraryEmuFilter("?view=dashboard&emu=installed")).toBe("installed");
+    expect(readLibraryEmuFilter("?view=dashboard")).toBe("installed");
+    expect(readLibraryEmuFilter("?view=dashboard&emu=all")).toBe("all");
   });
 });

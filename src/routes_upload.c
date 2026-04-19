@@ -201,33 +201,34 @@ static int cs_upload_field_found(const char *key,
     if (strcmp(key, "file") != 0) {
         return MG_FORM_FIELD_STORAGE_GET;
     }
-    if (state->plan_count >= CS_UPLOAD_MAX_FILES
-        || cs_upload_split_client_path(filename,
+    if (state->plan_count >= CS_UPLOAD_MAX_FILES || !filename || filename[0] == '\0') {
+        state->failed = 1;
+        return MG_FORM_FIELD_STORAGE_ABORT;
+    }
+    plan = &state->plans[state->plan_count];
+    if (cs_upload_split_client_path(filename,
                                        state->relative_dirs[state->plan_count],
                                        sizeof(state->relative_dirs[state->plan_count]),
                                        state->file_names[state->plan_count],
                                        sizeof(state->file_names[state->plan_count]))
+            != 0
+        || cs_upload_reserve_temp_path(&state->app->paths,
+                                       state->file_names[state->plan_count],
+                                       plan->temp_path,
+                                       sizeof(plan->temp_path))
                != 0) {
-        state->failed = 1;
-        return MG_FORM_FIELD_STORAGE_ABORT;
-    }
-
-    plan = &state->plans[state->plan_count];
-    memset(plan, 0, sizeof(*plan));
-    written = snprintf(plan->temp_path,
-                       sizeof(plan->temp_path),
-                       "%s/.incoming-upload-%ld-%zu-%s",
-                       state->app->paths.temp_upload_root,
-                       (long) getpid(),
-                       state->plan_count,
-                       state->file_names[state->plan_count]);
-    if (written < 0 || (size_t) written >= sizeof(plan->temp_path)) {
+        if (plan->temp_path[0] != '\0') {
+            (void) remove(plan->temp_path);
+            plan->temp_path[0] = '\0';
+        }
         state->failed = 1;
         return MG_FORM_FIELD_STORAGE_ABORT;
     }
 
     written = snprintf(path, pathlen, "%s", plan->temp_path);
     if (written < 0 || (size_t) written >= pathlen) {
+        (void) remove(plan->temp_path);
+        plan->temp_path[0] = '\0';
         state->failed = 1;
         return MG_FORM_FIELD_STORAGE_ABORT;
     }
@@ -398,10 +399,20 @@ int cs_route_upload_handler(struct mg_connection *conn, void *cbdata) {
             return cs_write_json(conn, 400, "Bad Request", "{\"ok\":false}");
         }
 
-        snprintf(promoted_plan.temp_path,
-                 sizeof(promoted_plan.temp_path),
-                 "%s",
-                 request_state.plans[i].temp_path);
+        written = snprintf(promoted_plan.temp_path,
+                           sizeof(promoted_plan.temp_path),
+                           "%s",
+                           request_state.plans[i].temp_path);
+        if (written < 0 || (size_t) written >= sizeof(promoted_plan.temp_path)) {
+            size_t j;
+
+            for (j = 0; j < request_state.plan_count; ++j) {
+                if (request_state.plans[j].temp_path[0] != '\0') {
+                    (void) remove(request_state.plans[j].temp_path);
+                }
+            }
+            return cs_write_json(conn, 500, "Internal Server Error", "{\"ok\":false}");
+        }
         request_state.plans[i] = promoted_plan;
     }
 

@@ -2,6 +2,7 @@
 
 #include "../third_party/sha256/sha256.h"
 
+#include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -16,9 +17,40 @@ static unsigned char g_csrf_secret[CS_SESSION_CSRF_SECRET_BYTES];
 static int g_csrf_secret_ready = 0;
 static pthread_once_t g_csrf_secret_once = PTHREAD_ONCE_INIT;
 
+static int cs_session_fill_random_bytes_from_fd(int fd, void *buffer, size_t len) {
+    unsigned char *cursor = (unsigned char *) buffer;
+    size_t remaining = len;
+
+    if (fd < 0 || !buffer || len == 0) {
+        return -1;
+    }
+
+    while (remaining > 0) {
+        ssize_t nread = read(fd, cursor, remaining);
+
+        if (nread > 0) {
+            cursor += (size_t) nread;
+            remaining -= (size_t) nread;
+            continue;
+        }
+        if (nread == 0) {
+            return -1;
+        }
+        if (errno == EINTR) {
+            continue;
+        }
+        return -1;
+    }
+
+    return 0;
+}
+
+int cs_session_fill_random_bytes_from_fd_for_test(int fd, void *buffer, size_t len) {
+    return cs_session_fill_random_bytes_from_fd(fd, buffer, len);
+}
+
 static int cs_session_random_bytes(void *buffer, size_t len) {
     int fd;
-    ssize_t nread;
 
     if (!buffer || len == 0) {
         return -1;
@@ -40,9 +72,11 @@ static int cs_session_random_bytes(void *buffer, size_t len) {
         return -1;
     }
 
-    nread = read(fd, buffer, len);
-    close(fd);
-    return nread == (ssize_t) len ? 0 : -1;
+    if (cs_session_fill_random_bytes_from_fd(fd, buffer, len) != 0) {
+        close(fd);
+        return -1;
+    }
+    return close(fd) == 0 ? 0 : -1;
 }
 
 static void cs_session_init_csrf_secret_once(void) {
@@ -62,7 +96,7 @@ static void cs_session_hmac_sha256(uint8_t hash[32], const char *token) {
     uint8_t ipad[CS_SESSION_SHA256_BLOCK_BYTES];
     uint8_t opad[CS_SESSION_SHA256_BLOCK_BYTES];
     size_t token_len = strlen(token);
-    uint8_t inner_input[CS_SESSION_SHA256_BLOCK_BYTES + token_len];
+    uint8_t inner_input[CS_SESSION_SHA256_BLOCK_BYTES + CS_SESSION_TOKEN_MAX_LEN];
     uint8_t outer_input[CS_SESSION_SHA256_BLOCK_BYTES + 32];
     uint8_t inner_hash[32];
     size_t i;
@@ -75,7 +109,7 @@ static void cs_session_hmac_sha256(uint8_t hash[32], const char *token) {
 
     memcpy(inner_input, ipad, sizeof(ipad));
     memcpy(inner_input + sizeof(ipad), token, token_len);
-    calc_sha_256(inner_hash, inner_input, sizeof(inner_input));
+    calc_sha_256(inner_hash, inner_input, sizeof(ipad) + token_len);
 
     memcpy(outer_input, opad, sizeof(opad));
     memcpy(outer_input + sizeof(opad), inner_hash, sizeof(inner_hash));
@@ -97,6 +131,9 @@ static int cs_session_token_is_safe(const char *token) {
     }
 
     for (i = 0; token[i] != '\0'; ++i) {
+        if (i >= CS_SESSION_TOKEN_MAX_LEN) {
+            return 0;
+        }
         if (!cs_session_token_char_is_allowed((unsigned char) token[i])) {
             return 0;
         }

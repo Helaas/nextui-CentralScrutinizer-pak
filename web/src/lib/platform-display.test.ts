@@ -20,6 +20,17 @@ function supportedResources(overrides: Partial<Record<"roms" | "saves" | "states
   };
 }
 
+function emulatorState(
+  overrides: Partial<{ requiresEmulator: boolean; emulatorInstalled: boolean; emulatorWarning: string | null }> = {},
+) {
+  return {
+    requiresEmulator: true,
+    emulatorInstalled: true,
+    emulatorWarning: null,
+    ...overrides,
+  };
+}
+
 function buildGroups(): PlatformGroup[] {
   return [
     {
@@ -31,6 +42,7 @@ function buildGroups(): PlatformGroup[] {
           group: "Nintendo",
           icon: "GBA",
           isCustom: false,
+          ...emulatorState(),
           romPath: "Roms/Game Boy Advance (GBA)",
           savePath: "Saves/GBA",
           biosPath: "Bios/GBA",
@@ -43,6 +55,7 @@ function buildGroups(): PlatformGroup[] {
           group: "Nintendo",
           icon: "MGBA",
           isCustom: false,
+          ...emulatorState({ emulatorInstalled: false, emulatorWarning: "Missing MGBA emulator." }),
           romPath: "Roms/Game Boy Advance (MGBA)",
           savePath: "Saves/MGBA",
           biosPath: "Bios/MGBA",
@@ -60,6 +73,7 @@ function buildGroups(): PlatformGroup[] {
           group: "Atari",
           icon: "ATARI5200",
           isCustom: false,
+          ...emulatorState(),
           romPath: "Roms/Atari 5200 (A5200)",
           savePath: "Saves/A5200",
           biosPath: "Bios/A5200",
@@ -72,6 +86,7 @@ function buildGroups(): PlatformGroup[] {
           group: "Atari",
           icon: "LYNX",
           isCustom: false,
+          ...emulatorState(),
           romPath: "Roms/Atari Lynx (LYNX)",
           savePath: "Saves/LYNX",
           biosPath: "Bios/LYNX",
@@ -89,6 +104,7 @@ function buildGroups(): PlatformGroup[] {
           group: "Computer",
           icon: "AMIGA",
           isCustom: false,
+          ...emulatorState(),
           romPath: "Roms/Amiga (PUAE)",
           savePath: "Saves/PUAE",
           biosPath: "Bios/PUAE",
@@ -102,7 +118,7 @@ function buildGroups(): PlatformGroup[] {
 
 describe("platform-display", () => {
   it("adds tags when duplicate platform names are visible together", () => {
-    const visibleGroups = filterPlatformGroups(buildGroups(), "", true);
+    const visibleGroups = filterPlatformGroups(buildGroups(), "", "all", true);
     const displayNames = createPlatformDisplayNames(flattenPlatformGroups(visibleGroups));
 
     expect(displayNames.get("GBA")).toBe("Game Boy Advance (GBA)");
@@ -110,7 +126,7 @@ describe("platform-display", () => {
   });
 
   it("drops the suffix when an empty duplicate platform is hidden", () => {
-    const visibleGroups = filterPlatformGroups(buildGroups(), "", false);
+    const visibleGroups = filterPlatformGroups(buildGroups(), "", "all", false);
     const displayNames = createPlatformDisplayNames(flattenPlatformGroups(visibleGroups));
 
     expect(flattenPlatformGroups(visibleGroups)).toHaveLength(4);
@@ -122,14 +138,14 @@ describe("platform-display", () => {
   });
 
   it("keeps platforms with plain BIOS files when show empty is off", () => {
-    const visibleGroups = filterPlatformGroups(buildGroups(), "", false);
+    const visibleGroups = filterPlatformGroups(buildGroups(), "", "all", false);
     const visibleTags = flattenPlatformGroups(visibleGroups).map((platform) => platform.tag);
 
     expect(visibleTags).toContain("PUAE");
   });
 
   it("matches searches against the visible duplicate label", () => {
-    const visibleGroups = filterPlatformGroups(buildGroups(), "game boy advance (mgba)", true);
+    const visibleGroups = filterPlatformGroups(buildGroups(), "game boy advance (mgba)", "all", true);
     const visiblePlatforms = flattenPlatformGroups(visibleGroups);
 
     expect(visiblePlatforms).toHaveLength(1);
@@ -143,6 +159,7 @@ describe("platform-display", () => {
       group: "PortMaster",
       icon: "PORTMASTER",
       isCustom: false,
+      ...emulatorState({ requiresEmulator: false }),
       romPath: "Roms/Ports (PORTS)",
       savePath: "Saves/PORTS",
       biosPath: "Bios/PORTS",
@@ -157,5 +174,13 @@ describe("platform-display", () => {
     });
 
     expect(description).toBe("7 ROMs");
+  });
+
+  it("hides missing-emulator consoles in installed-only mode", () => {
+    const visibleGroups = filterPlatformGroups(buildGroups(), "", "installed", true);
+    const visibleTags = flattenPlatformGroups(visibleGroups).map((platform) => platform.tag);
+
+    expect(visibleTags).toContain("GBA");
+    expect(visibleTags).not.toContain("MGBA");
   });
 });

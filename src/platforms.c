@@ -1,4 +1,5 @@
 #include "cs_platforms.h"
+#include "cs_build_info.h"
 
 #include <dirent.h>
 #include <stdio.h>
@@ -244,7 +245,7 @@ static const cs_platform_info g_platforms[] = {
 
 typedef struct cs_discovered_rom_dir {
     char system_name[128];
-    char system_code[32];
+    char system_code[CS_PLATFORM_CODE_MAX];
     char dir_name[256];
 } cs_discovered_rom_dir;
 
@@ -367,57 +368,6 @@ static int cs_platform_is_ports(const cs_platform_info *platform) {
     return platform && strcmp(platform->tag, "PORTS") == 0;
 }
 
-static const char *cs_platform_custom_icon(const char *system_code) {
-    if (!system_code || system_code[0] == '\0') {
-        return "DOS";
-    }
-    if (cs_platform_codes_equal(system_code, "3DO")) {
-        return "3DO";
-    }
-    if (cs_platform_codes_equal(system_code, "A800") || strcmp(system_code, "ATARI800") == 0) {
-        return "A800";
-    }
-    if (cs_platform_codes_equal(system_code, "DC") || cs_platform_codes_equal(system_code, "FLYCAST")) {
-        return "DC";
-    }
-    if (cs_platform_codes_equal(system_code, "EASYRPG") || strcmp(system_code, "RPGM") == 0) {
-        return "RPGM";
-    }
-    if (cs_platform_codes_equal(system_code, "INTV")) {
-        return "INTELLIVISION";
-    }
-    if (cs_platform_codes_equal(system_code, "JAGUAR")) {
-        return "JAGUAR";
-    }
-    if (cs_platform_codes_equal(system_code, "N64") || cs_platform_codes_equal(system_code, "P64")) {
-        return "N64";
-    }
-    if (cs_platform_codes_equal(system_code, "NDS")) {
-        return "NDS";
-    }
-    if (cs_platform_codes_equal(system_code, "PICO")
-        || cs_platform_codes_equal(system_code, "P8")
-        || strcmp(system_code, "PICO8") == 0) {
-        return "PICO8";
-    }
-    if (cs_platform_codes_equal(system_code, "PSP") || cs_platform_codes_equal(system_code, "PPSSPP")) {
-        return "PSP";
-    }
-    if (cs_platform_codes_equal(system_code, "SATURN")) {
-        return "SATURN";
-    }
-    if (cs_platform_codes_equal(system_code, "SCUMMVM")) {
-        return "SCUMMVM";
-    }
-    if (cs_platform_codes_equal(system_code, "SUPERGRAFX")) {
-        return "SUPERGRAFX";
-    }
-    if (cs_platform_codes_equal(system_code, "TIC") || strcmp(system_code, "TIC80") == 0) {
-        return "TIC80";
-    }
-    return "DOS";
-}
-
 static int cs_platform_find_discovered_by_code(const cs_discovered_rom_dir *dirs,
                                                size_t dir_count,
                                                const char *system_code) {
@@ -436,6 +386,146 @@ static int cs_platform_find_discovered_by_code(const cs_discovered_rom_dir *dirs
     return -1;
 }
 
+static int cs_platform_build_is_handheld(void) {
+    const char *platform = cs_build_info_platform_name();
+
+    return platform && (strcmp(platform, "tg5040") == 0 || strcmp(platform, "tg5050") == 0 || strcmp(platform, "my355") == 0);
+}
+
+static int cs_platform_ports_directory_exists(const cs_paths *paths) {
+    char ports_dir[CS_PATH_MAX];
+    int written;
+
+    if (!paths) {
+        return 0;
+    }
+
+    written = snprintf(ports_dir, sizeof(ports_dir), "%s/%s", paths->roms_root, "Ports (PORTS)");
+    if (written < 0 || (size_t) written >= sizeof(ports_dir)) {
+        return 0;
+    }
+
+    return cs_platform_is_directory(ports_dir);
+}
+
+static int cs_platform_add_emulator_code(char codes[][CS_PLATFORM_CODE_MAX],
+                                         size_t *count,
+                                         size_t capacity,
+                                         const char *code) {
+    size_t i;
+
+    if (!codes || !count || !code || code[0] == '\0') {
+        return -1;
+    }
+
+    for (i = 0; i < *count; ++i) {
+        if (cs_platform_codes_equal(codes[i], code)) {
+            return 0;
+        }
+    }
+    if (*count >= capacity) {
+        return -1;
+    }
+
+    return cs_write_string(codes[(*count)++], CS_PLATFORM_CODE_MAX, code);
+}
+
+static int cs_platform_collect_emulators_from_dir(const char *dir_path,
+                                                  char codes[][CS_PLATFORM_CODE_MAX],
+                                                  size_t *count,
+                                                  size_t capacity) {
+    DIR *dir;
+    struct dirent *entry;
+
+    if (!dir_path || !codes || !count) {
+        return -1;
+    }
+
+    dir = opendir(dir_path);
+    if (!dir) {
+        return 0;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        char code[CS_PLATFORM_CODE_MAX];
+        char absolute_path[CS_PATH_MAX];
+        size_t name_len;
+        struct stat st;
+
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+        name_len = strlen(entry->d_name);
+        if (name_len <= 4 || strcmp(entry->d_name + name_len - 4, ".pak") != 0) {
+            continue;
+        }
+        if (name_len - 4 >= sizeof(code)) {
+            continue;
+        }
+        if (snprintf(absolute_path, sizeof(absolute_path), "%s/%s", dir_path, entry->d_name) < 0) {
+            continue;
+        }
+        if (lstat(absolute_path, &st) != 0 || !(S_ISREG(st.st_mode) || S_ISDIR(st.st_mode))) {
+            continue;
+        }
+
+        memcpy(code, entry->d_name, name_len - 4);
+        code[name_len - 4] = '\0';
+        if (cs_platform_add_emulator_code(codes, count, capacity, code) != 0) {
+            closedir(dir);
+            return -1;
+        }
+    }
+
+    closedir(dir);
+    return 0;
+}
+
+static int cs_platform_collect_emulators_from_children(const char *root,
+                                                       const char *suffix,
+                                                       char codes[][CS_PLATFORM_CODE_MAX],
+                                                       size_t *count,
+                                                       size_t capacity) {
+    DIR *dir;
+    struct dirent *entry;
+
+    if (!root || !codes || !count) {
+        return -1;
+    }
+
+    dir = opendir(root);
+    if (!dir) {
+        return 0;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        char child_dir[CS_PATH_MAX];
+        int written;
+
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+        if (suffix) {
+            written = snprintf(child_dir, sizeof(child_dir), "%s/%s/%s", root, entry->d_name, suffix);
+        } else {
+            written = snprintf(child_dir, sizeof(child_dir), "%s/%s", root, entry->d_name);
+        }
+        if (written < 0 || (size_t) written >= sizeof(child_dir)) {
+            continue;
+        }
+        if (!cs_platform_is_directory(child_dir)) {
+            continue;
+        }
+        if (cs_platform_collect_emulators_from_dir(child_dir, codes, count, capacity) != 0) {
+            closedir(dir);
+            return -1;
+        }
+    }
+
+    closedir(dir);
+    return 0;
+}
+
 int cs_platform_supports_resource(const cs_platform_info *platform, const char *resource) {
     if (!platform || !resource || resource[0] == '\0') {
         return 0;
@@ -450,6 +540,10 @@ int cs_platform_supports_resource(const cs_platform_info *platform, const char *
 
     return strcmp(resource, "saves") == 0 || strcmp(resource, "states") == 0 || strcmp(resource, "bios") == 0
            || strcmp(resource, "overlays") == 0 || strcmp(resource, "cheats") == 0;
+}
+
+int cs_platform_requires_emulator(const cs_platform_info *platform) {
+    return platform && !cs_platform_is_ports(platform);
 }
 
 int cs_platform_allows_hidden_rom_entries(const cs_platform_info *platform) {
@@ -551,25 +645,6 @@ static int cs_platform_scan_rom_dirs(const cs_paths *paths,
     return 0;
 }
 
-static int cs_platform_make_custom(const cs_discovered_rom_dir *dir, cs_platform_info *target) {
-    if (!dir || !target) {
-        return -1;
-    }
-
-    memset(target, 0, sizeof(*target));
-    if (cs_write_string(target->tag, sizeof(target->tag), dir->system_code) != 0
-        || cs_write_string(target->name, sizeof(target->name), dir->system_name) != 0
-        || cs_write_string(target->group, sizeof(target->group), "Custom") != 0
-        || cs_write_string(target->icon, sizeof(target->icon), cs_platform_custom_icon(dir->system_code)) != 0
-        || cs_write_string(target->primary_code, sizeof(target->primary_code), dir->system_code) != 0
-        || cs_write_string(target->rom_directory, sizeof(target->rom_directory), dir->dir_name) != 0) {
-        return -1;
-    }
-
-    target->is_custom = 1;
-    return 0;
-}
-
 size_t cs_platform_count(void) {
     return sizeof(g_platforms) / sizeof(g_platforms[0]);
 }
@@ -619,6 +694,9 @@ int cs_platform_resolve(const cs_paths *paths, const char *tag, cs_platform_info
     if (!paths) {
         return known ? 0 : -1;
     }
+    if (known && cs_platform_is_ports(target)) {
+        return cs_platform_ports_directory_exists(paths) ? 0 : -1;
+    }
     if (cs_platform_scan_rom_dirs(paths, dirs, CS_DISCOVERED_PLATFORM_MAX, &dir_count) != 0) {
         return -1;
     }
@@ -636,11 +714,8 @@ int cs_platform_resolve(const cs_paths *paths, const char *tag, cs_platform_info
     }
 
     discovered_index = cs_platform_find_discovered_by_code(dirs, dir_count, tag);
-    if (discovered_index < 0) {
-        return -1;
-    }
-
-    return cs_platform_make_custom(&dirs[discovered_index], target);
+    (void) discovered_index;
+    return -1;
 }
 
 int cs_platform_discover(const cs_paths *paths,
@@ -663,6 +738,10 @@ int cs_platform_discover(const cs_paths *paths,
     }
 
     for (i = 0; i < cs_platform_count() && count < capacity; ++i) {
+        if (cs_platform_is_ports(&g_platforms[i]) && !cs_platform_ports_directory_exists(paths)) {
+            continue;
+        }
+
         platforms[count] = g_platforms[i];
 
         {
@@ -678,16 +757,6 @@ int cs_platform_discover(const cs_paths *paths,
             }
         }
 
-        count += 1;
-    }
-
-    for (i = 0; i < dir_count && count < capacity; ++i) {
-        if (cs_platform_find(dirs[i].system_code) != NULL) {
-            continue;
-        }
-        if (cs_platform_make_custom(&dirs[i], &platforms[count]) != 0) {
-            return -1;
-        }
         count += 1;
     }
 
@@ -734,5 +803,71 @@ int cs_platform_parse_rom_directory(const char *dir_name,
     if (!cs_platform_component_is_safe(system_code)) {
         return -1;
     }
+    return 0;
+}
+
+int cs_platform_collect_installed_emulators(const cs_paths *paths,
+                                            char codes[][CS_PLATFORM_CODE_MAX],
+                                            size_t capacity,
+                                            size_t *count_out) {
+    char target_dir[CS_PATH_MAX];
+    size_t count = 0;
+    const char *platform_name;
+
+    if (count_out) {
+        *count_out = 0;
+    }
+    if (!paths || !codes || capacity == 0) {
+        return -1;
+    }
+
+    platform_name = cs_build_info_platform_name();
+    if (cs_platform_build_is_handheld()) {
+        if (snprintf(target_dir, sizeof(target_dir), "%s/%s", paths->emus_root, platform_name) < 0) {
+            return -1;
+        }
+        if (cs_platform_collect_emulators_from_dir(target_dir, codes, &count, capacity) != 0) {
+            return -1;
+        }
+        if (snprintf(target_dir, sizeof(target_dir), "%s/%s/paks/Emus", paths->system_root, platform_name) < 0) {
+            return -1;
+        }
+        if (cs_platform_collect_emulators_from_dir(target_dir, codes, &count, capacity) != 0) {
+            return -1;
+        }
+    } else {
+        if (cs_platform_collect_emulators_from_children(paths->emus_root, NULL, codes, &count, capacity) != 0) {
+            return -1;
+        }
+        if (cs_platform_collect_emulators_from_children(paths->system_root, "paks/Emus", codes, &count, capacity) != 0) {
+            return -1;
+        }
+    }
+
+    if (count_out) {
+        *count_out = count;
+    }
+    return 0;
+}
+
+int cs_platform_has_installed_emulator(const cs_platform_info *platform,
+                                       const char codes[][CS_PLATFORM_CODE_MAX],
+                                       size_t code_count) {
+    size_t i;
+
+    if (!platform || !codes) {
+        return 0;
+    }
+    if (!cs_platform_requires_emulator(platform)) {
+        return 1;
+    }
+
+    /* Emu resolution is tag-exact; MGBA/SUPA/SGB are separate paks in NextUI and report independently. */
+    for (i = 0; i < code_count; ++i) {
+        if (cs_platform_codes_equal(platform->tag, codes[i])) {
+            return 1;
+        }
+    }
+
     return 0;
 }

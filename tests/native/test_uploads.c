@@ -362,6 +362,45 @@ static void test_concurrent_no_replace_promotion(void) {
     assert(rmdir(sandbox_template) == 0);
 }
 
+static void test_reserved_temp_paths_are_unique(void) {
+    cs_paths paths = {0};
+    char sandbox_template[] = "/tmp/cs-upload-reserve-XXXXXX";
+    char path_buffer[CS_PATH_MAX];
+    char temp_path_a[CS_PATH_MAX];
+    char temp_path_b[CS_PATH_MAX];
+
+    assert(mkdtemp(sandbox_template) != NULL);
+    assert(snprintf(paths.shared_state_root,
+                    sizeof(paths.shared_state_root),
+                    "%s/.userdata/shared/CentralScrutinizer",
+                    sandbox_template)
+           > 0);
+    assert(snprintf(paths.sdcard_root, sizeof(paths.sdcard_root), "%s", sandbox_template) > 0);
+    assert(snprintf(paths.temp_upload_root,
+                    sizeof(paths.temp_upload_root),
+                    "%s/uploads/tmp",
+                    paths.shared_state_root)
+           > 0);
+
+    assert(cs_upload_reserve_temp_path(&paths, "same-name.gba", temp_path_a, sizeof(temp_path_a)) == 0);
+    assert(cs_upload_reserve_temp_path(&paths, "same-name.gba", temp_path_b, sizeof(temp_path_b)) == 0);
+    assert(strcmp(temp_path_a, temp_path_b) != 0);
+    assert(access(temp_path_a, F_OK) == 0);
+    assert(access(temp_path_b, F_OK) == 0);
+
+    assert(remove(temp_path_a) == 0);
+    assert(remove(temp_path_b) == 0);
+    assert(rmdir(paths.temp_upload_root) == 0);
+    assert(snprintf(path_buffer, sizeof(path_buffer), "%s/uploads", paths.shared_state_root) > 0);
+    assert(rmdir(path_buffer) == 0);
+    assert(rmdir(paths.shared_state_root) == 0);
+    assert(snprintf(path_buffer, sizeof(path_buffer), "%s/.userdata/shared", sandbox_template) > 0);
+    assert(rmdir(path_buffer) == 0);
+    assert(snprintf(path_buffer, sizeof(path_buffer), "%s/.userdata", sandbox_template) > 0);
+    assert(rmdir(path_buffer) == 0);
+    assert(rmdir(sandbox_template) == 0);
+}
+
 int main(void) {
     cs_paths paths;
     cs_upload_plan plan;
@@ -429,6 +468,7 @@ int main(void) {
     test_symlinked_temp_root_is_rejected();
     test_symlinked_guard_root_is_rejected();
     test_concurrent_no_replace_promotion();
+    test_reserved_temp_paths_are_unique();
 
     return 0;
 }

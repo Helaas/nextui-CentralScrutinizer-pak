@@ -18,7 +18,10 @@ ROM_NAME="$(find "$SDCARD_ROOT/Roms/Game Boy Advance (GBA)" -maxdepth 1 -type f 
 ROM_BASE="${ROM_NAME%.*}"
 [ -n "$ROM_NAME" ]
 mkdir -p "$SDCARD_ROOT/Roms/Game Boy Advance (GBA)/.media"
+mkdir -p "$SDCARD_ROOT/Emus/tg5040"
+mkdir -p "$SDCARD_ROOT/Roms/Dreamcast (FLYCAST)"
 printf 'png' > "$SDCARD_ROOT/Roms/Game Boy Advance (GBA)/.media/$ROM_BASE.png"
+printf 'pak' > "$SDCARD_ROOT/Emus/tg5040/GBA.pak"
 
 CS_PAIRING_CODE=7391 ./build/mac/central-scrutinizer --headless --port 8877 --web-root web/out --sdcard "$SDCARD_ROOT" &
 SERVER_PID=$!
@@ -63,6 +66,15 @@ curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms | grep -Fq '"name":"Game Boy Advance"'
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms | grep -Fq '"group":"Nintendo"'
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms | grep -Fq '"counts":{"roms":1,"saves":1,"states":5,"bios":1,"overlays":0,"cheats":0}'
+PLATFORMS_RESPONSE="$(curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms)"
+printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"tag":"PORTS"'
+printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"requiresEmulator":true'
+printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"emulatorInstalled":true'
+printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"tag":"PORTS","name":"Ports","group":"PortMaster","icon":"PORTMASTER","isCustom":false,"requiresEmulator":false'
+if printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"tag":"FLYCAST"'; then
+    echo "custom platform unexpectedly exposed in library response" >&2
+    exit 1
+fi
 
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=roms&tag=GBA' | grep -Fq "\"name\":\"$ROM_NAME\""
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=roms&tag=GBA' | grep -Fq "\"thumbnailPath\":\".media/$ROM_BASE.png\""

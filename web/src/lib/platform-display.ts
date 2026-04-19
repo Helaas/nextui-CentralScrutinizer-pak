@@ -1,4 +1,4 @@
-import type { BrowserScope, PlatformGroup, PlatformResource, PlatformSummary } from "./types";
+import type { BrowserScope, LibraryEmuFilter, PlatformGroup, PlatformResource, PlatformSummary } from "./types";
 
 const platformResourceOrder: PlatformResource[] = ["roms", "saves", "states", "bios", "overlays", "cheats"];
 
@@ -49,6 +49,14 @@ function platformHasVisibleContent(platform: PlatformSummary): boolean {
   return getSupportedPlatformResources(platform).some((resource) => platform.counts[resource] > 0);
 }
 
+function platformMatchesEmulatorFilter(platform: PlatformSummary, emuFilter: LibraryEmuFilter): boolean {
+  if (emuFilter !== "installed") {
+    return true;
+  }
+
+  return !platform.requiresEmulator || platform.emulatorInstalled;
+}
+
 export function formatPlatformCardSummary(platform: PlatformSummary): string {
   return getSupportedPlatformResources(platform)
     .map((resource) => `${platform.counts[resource]} ${platformCardLabels[resource]}`)
@@ -68,6 +76,7 @@ export function flattenPlatformGroups(groups: PlatformGroup[]): PlatformSummary[
 export function filterPlatformGroups(
   groups: PlatformGroup[],
   search: string,
+  emuFilter: LibraryEmuFilter,
   showEmptyPlatforms: boolean,
 ): PlatformGroup[] {
   const query = search.trim().toLowerCase();
@@ -76,6 +85,9 @@ export function filterPlatformGroups(
     .map((group) => ({
       ...group,
       platforms: group.platforms.filter((platform) => {
+        if (!platformMatchesEmulatorFilter(platform, emuFilter)) {
+          return false;
+        }
         if (!showEmptyPlatforms && !platformHasVisibleContent(platform)) {
           return false;
         }

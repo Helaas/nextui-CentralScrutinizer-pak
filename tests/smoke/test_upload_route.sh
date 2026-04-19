@@ -12,6 +12,8 @@ SOURCE_ROM="$(find "fixtures/mock_sdcard/Roms/Game Boy Advance (GBA)" -maxdepth 
 SOURCE_SAVE="fixtures/mock_sdcard/Saves/GBA/Pokemon Emerald.sav"
 SOURCE_BIOS="fixtures/mock_sdcard/Bios/GBA/gba_bios.bin"
 SOURCE_NOTE="$WORK_DIR/source-note.txt"
+SOURCE_NOTE_A="$WORK_DIR/source-note-a.txt"
+SOURCE_NOTE_B="$WORK_DIR/source-note-b.txt"
 ROM_UPLOAD_NAME="upload-$RANDOM-$$.gba"
 SAVE_UPLOAD_NAME="upload-$RANDOM-$$.sav"
 BIOS_UPLOAD_NAME="upload-$RANDOM-$$.bin"
@@ -28,6 +30,12 @@ UPLOADED_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/Favorite
 NORMALIZED_PARENT_UPLOADED_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/$NORMALIZED_PARENT_NOTE_UPLOAD_NAME"
 NORMALIZED_DOT_SEGMENT_UPLOADED_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/$NORMALIZED_DOT_SEGMENT_NOTE_UPLOAD_NAME"
 NORMALIZED_DOUBLE_SEPARATOR_UPLOADED_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/Favorites/$NORMALIZED_DOUBLE_SEPARATOR_NOTE_UPLOAD_NAME"
+EMPTY_FILENAME_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/empty-filename-should-not-exist.txt"
+PARALLEL_CLIENT_NAME="parallel-$RANDOM-$$.txt"
+PARALLEL_PATH_A=".userdata/shared/CentralScrutinizer/imports/parallel-a"
+PARALLEL_PATH_B=".userdata/shared/CentralScrutinizer/imports/parallel-b"
+PARALLEL_UPLOAD_A="$SDCARD_ROOT/$PARALLEL_PATH_A/$PARALLEL_CLIENT_NAME"
+PARALLEL_UPLOAD_B="$SDCARD_ROOT/$PARALLEL_PATH_B/$PARALLEL_CLIENT_NAME"
 CSRF_TOKEN=""
 
 [ -n "$SOURCE_ROM" ]
@@ -87,6 +95,12 @@ prepare_mock_sdcard "$SDCARD_ROOT"
 # cs_upload_prepare_temp_root has to create the full chain itself.
 rm -rf "$SDCARD_ROOT/.userdata/shared/CentralScrutinizer"
 printf 'Central Scrutinizer file-browser upload\n' > "$SOURCE_NOTE"
+python3 - <<PY
+from pathlib import Path
+
+Path("$SOURCE_NOTE_A").write_text("A" * 262144 + "\\n", encoding="utf-8")
+Path("$SOURCE_NOTE_B").write_text("B" * 262144 + "\\n", encoding="utf-8")
+PY
 
 CS_PAIRING_CODE=7391 ./build/mac/central-scrutinizer --headless --port 8877 --web-root web/out --sdcard "$SDCARD_ROOT" &
 SERVER_PID=$!
@@ -201,5 +215,51 @@ assert_upload_rejected "files" ".userdata/shared/CentralScrutinizer/imports" "$M
     "$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/$MALFORMED_DIRECTORY_NAME"
 assert_upload_rejected "roms" "" ".hidden/$NOTE_UPLOAD_NAME" \
     "$SDCARD_ROOT/Roms/Game Boy Advance (GBA)/.hidden/$NOTE_UPLOAD_NAME"
+
+UPLOAD_RESPONSE="$(curl -sS -X POST \
+    -b "$COOKIE_JAR" \
+    -H "X-CS-CSRF: $CSRF_TOKEN" \
+    -F "scope=files" \
+    -F "path=.userdata/shared/CentralScrutinizer/imports" \
+    -F "file=@$SOURCE_NOTE;filename=" \
+    -w '\n%{http_code}' \
+    http://127.0.0.1:8877/api/upload)"
+
+echo "$UPLOAD_RESPONSE" | head -n 1 | grep -Fq '{"ok":false}'
+echo "$UPLOAD_RESPONSE" | tail -n 1 | grep -q '^400$'
+test ! -e "$EMPTY_FILENAME_NOTE"
+
+PARALLEL_RESPONSE_A="$WORK_DIR/parallel-a.response"
+PARALLEL_RESPONSE_B="$WORK_DIR/parallel-b.response"
+curl -sS -X POST \
+    -b "$COOKIE_JAR" \
+    -H "X-CS-CSRF: $CSRF_TOKEN" \
+    -F "scope=files" \
+    -F "path=$PARALLEL_PATH_A" \
+    -F "file=@$SOURCE_NOTE_A;filename=$PARALLEL_CLIENT_NAME" \
+    -w '\n%{http_code}' \
+    http://127.0.0.1:8877/api/upload > "$PARALLEL_RESPONSE_A" &
+PARALLEL_PID_A=$!
+curl -sS -X POST \
+    -b "$COOKIE_JAR" \
+    -H "X-CS-CSRF: $CSRF_TOKEN" \
+    -F "scope=files" \
+    -F "path=$PARALLEL_PATH_B" \
+    -F "file=@$SOURCE_NOTE_B;filename=$PARALLEL_CLIENT_NAME" \
+    -w '\n%{http_code}' \
+    http://127.0.0.1:8877/api/upload > "$PARALLEL_RESPONSE_B" &
+PARALLEL_PID_B=$!
+
+wait "$PARALLEL_PID_A"
+wait "$PARALLEL_PID_B"
+
+echo "$(head -n 1 "$PARALLEL_RESPONSE_A")" | grep -Fq '{"ok":true}'
+echo "$(tail -n 1 "$PARALLEL_RESPONSE_A")" | grep -q '^200$'
+echo "$(head -n 1 "$PARALLEL_RESPONSE_B")" | grep -Fq '{"ok":true}'
+echo "$(tail -n 1 "$PARALLEL_RESPONSE_B")" | grep -q '^200$'
+test -f "$PARALLEL_UPLOAD_A"
+test -f "$PARALLEL_UPLOAD_B"
+cmp -s "$SOURCE_NOTE_A" "$PARALLEL_UPLOAD_A"
+cmp -s "$SOURCE_NOTE_B" "$PARALLEL_UPLOAD_B"
 
 echo "PASS upload route smoke"

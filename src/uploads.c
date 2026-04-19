@@ -62,6 +62,53 @@ static unsigned long cs_upload_nonce(void) {
     return ((unsigned long) now.tv_nsec ^ sequence ^ (unsigned long) getpid());
 }
 
+int cs_upload_reserve_temp_path(const cs_paths *paths,
+                                const char *filename,
+                                char *buffer,
+                                size_t buffer_len) {
+    size_t attempt;
+
+    if (!paths || !filename || !buffer || buffer_len == 0) {
+        return -1;
+    }
+    if (!cs_upload_component_is_safe(filename)) {
+        return -1;
+    }
+    if (cs_upload_prepare_temp_root(paths) != 0) {
+        return -1;
+    }
+
+    for (attempt = 0; attempt < 256; ++attempt) {
+        int fd;
+
+        if (cs_upload_write_path(buffer,
+                                 buffer_len,
+                                 "%s/.incoming-%ld-%lu-%s",
+                                 paths->temp_upload_root,
+                                 (long) getpid(),
+                                 cs_upload_nonce(),
+                                 filename)
+            != 0) {
+            return -1;
+        }
+
+        fd = open(buffer, O_CREAT | O_EXCL | O_WRONLY, 0600);
+        if (fd >= 0) {
+            if (close(fd) != 0) {
+                (void) unlink(buffer);
+                return -1;
+            }
+            return 0;
+        }
+        if (errno != EEXIST) {
+            return -1;
+        }
+    }
+
+    errno = EEXIST;
+    return -1;
+}
+
 static int cs_upload_extract_parent(const char *path, char *parent, size_t parent_size) {
     const char *slash;
     size_t length;

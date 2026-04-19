@@ -120,6 +120,7 @@ static void test_portmaster_platform_metadata(void) {
     assert(cs_platform_supports_resource(info, "bios") == 0);
     assert(cs_platform_supports_resource(info, "overlays") == 0);
     assert(cs_platform_supports_resource(info, "cheats") == 0);
+    assert(cs_platform_requires_emulator(info) == 0);
     assert(cs_platform_allows_hidden_rom_entries(info) == 1);
 }
 
@@ -233,7 +234,7 @@ static void write_file(const char *path, const char *content) {
     assert(fclose(file) == 0);
 }
 
-static void test_textures_directory_is_exposed_as_custom_platform(void) {
+static void test_custom_rom_directories_are_not_exposed_in_library(void) {
     char template[] = "/tmp/cs-platforms-custom-XXXXXX";
     char *root;
     char roms_dir[PATH_MAX];
@@ -243,9 +244,8 @@ static void test_textures_directory_is_exposed_as_custom_platform(void) {
     char dreamcast_file[PATH_MAX];
     cs_paths paths = {0};
     cs_platform_info discovered[256];
+    cs_platform_info resolved = {0};
     size_t discovered_count = 0;
-    const cs_platform_info *textures;
-    const cs_platform_info *dreamcast;
 
     root = mkdtemp(template);
     assert(root != NULL);
@@ -269,16 +269,10 @@ static void test_textures_directory_is_exposed_as_custom_platform(void) {
                                 &discovered_count)
            == 0);
 
-    textures = find_platform_entry(discovered, discovered_count, "GL");
-    assert(textures != NULL);
-    assert(textures->is_custom == 1);
-    assert(strcmp(textures->name, "Textures") == 0);
-    assert(strcmp(textures->rom_directory, "Textures (GL)") == 0);
-
-    dreamcast = find_platform_entry(discovered, discovered_count, "FLYCAST");
-    assert(dreamcast != NULL);
-    assert(dreamcast->is_custom == 1);
-    assert(strcmp(dreamcast->name, "Dreamcast") == 0);
+    assert(find_platform_entry(discovered, discovered_count, "GL") == NULL);
+    assert(find_platform_entry(discovered, discovered_count, "FLYCAST") == NULL);
+    assert(cs_platform_resolve(&paths, "GL", &resolved) == -1);
+    assert(cs_platform_resolve(&paths, "FLYCAST", &resolved) == -1);
 
     assert(remove(textures_file) == 0);
     assert(remove(dreamcast_file) == 0);
@@ -288,57 +282,108 @@ static void test_textures_directory_is_exposed_as_custom_platform(void) {
     assert(rmdir(root) == 0);
 }
 
-static void test_custom_platform_icons_are_mapped(void) {
-    char template[] = "/tmp/cs-platforms-icons-XXXXXX";
+static void test_ports_are_only_discovered_when_installed(void) {
+    char template[] = "/tmp/cs-platforms-ports-XXXXXX";
     char *root;
     char roms_dir[PATH_MAX];
-    char dir_path[PATH_MAX];
+    char ports_dir[PATH_MAX];
     cs_paths paths = {0};
+    cs_platform_info discovered[256];
     cs_platform_info resolved = {0};
-    size_t i;
-    const struct {
-        const char *dir_name;
-        const char *tag;
-        const char *icon;
-    } cases[] = {
-        {"Atari 800 (A800)", "A800", "A800"},
-        {"Dreamcast (FLYCAST)", "FLYCAST", "DC"},
-        {"3DO (3DO)", "3DO", "3DO"},
-        {"RPG Maker 2000-2003 (EASYRPG)", "EASYRPG", "RPGM"},
-        {"Intellivision (INTV)", "INTV", "INTELLIVISION"},
-        {"Atari Jaguar (JAGUAR)", "JAGUAR", "JAGUAR"},
-        {"Nintendo 64 (P64)", "P64", "N64"},
-        {"Nintendo DS (NDS)", "NDS", "NDS"},
-        {"PICO-8 (PICO)", "PICO", "PICO8"},
-        {"PlayStation Portable (PPSSPP)", "PPSSPP", "PSP"},
-        {"Sega Saturn (SATURN)", "SATURN", "SATURN"},
-        {"ScummVM (SCUMMVM)", "SCUMMVM", "SCUMMVM"},
-        {"PC Engine SuperGrafx (SUPERGRAFX)", "SUPERGRAFX", "SUPERGRAFX"},
-        {"TIC-80 (TIC)", "TIC", "TIC80"},
-    };
+    size_t discovered_count = 0;
 
     root = mkdtemp(template);
     assert(root != NULL);
     assert(snprintf(roms_dir, sizeof(roms_dir), "%s/Roms", root) > 0);
+    assert(snprintf(ports_dir, sizeof(ports_dir), "%s/Roms/Ports (PORTS)", root) > 0);
     make_dir(roms_dir);
-
-    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
-        assert(snprintf(dir_path, sizeof(dir_path), "%s/Roms/%s", root, cases[i].dir_name) > 0);
-        make_dir(dir_path);
-    }
 
     set_sdcard_root_realpath(root);
     assert(cs_paths_init(&paths) == 0);
+    assert(cs_platform_discover(&paths,
+                                discovered,
+                                sizeof(discovered) / sizeof(discovered[0]),
+                                &discovered_count)
+           == 0);
+    assert(find_platform_entry(discovered, discovered_count, "PORTS") == NULL);
+    assert(cs_platform_resolve(&paths, "PORTS", &resolved) == -1);
 
-    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
-        assert(cs_platform_resolve(&paths, cases[i].tag, &resolved) == 0);
-        assert(strcmp(resolved.icon, cases[i].icon) == 0);
-    }
+    make_dir(ports_dir);
 
-    for (i = sizeof(cases) / sizeof(cases[0]); i > 0; --i) {
-        assert(snprintf(dir_path, sizeof(dir_path), "%s/Roms/%s", root, cases[i - 1].dir_name) > 0);
-        assert(rmdir(dir_path) == 0);
-    }
+    assert(cs_platform_discover(&paths,
+                                discovered,
+                                sizeof(discovered) / sizeof(discovered[0]),
+                                &discovered_count)
+           == 0);
+    assert(find_platform_entry(discovered, discovered_count, "PORTS") != NULL);
+    assert(cs_platform_resolve(&paths, "PORTS", &resolved) == 0);
+
+    assert(rmdir(ports_dir) == 0);
+    assert(rmdir(roms_dir) == 0);
+    assert(rmdir(root) == 0);
+}
+
+static void test_emulator_scan_checks_emus_and_system_paks(void) {
+    char template[] = "/tmp/cs-platforms-emus-XXXXXX";
+    char *root;
+    char roms_dir[PATH_MAX];
+    char emus_root[PATH_MAX];
+    char emus_platform_dir[PATH_MAX];
+    char system_root[PATH_MAX];
+    char system_platform_dir[PATH_MAX];
+    char system_paks_dir[PATH_MAX];
+    char system_emus_dir[PATH_MAX];
+    char gba_pak[PATH_MAX];
+    char fc_pak[PATH_MAX];
+    cs_paths paths = {0};
+    char codes[16][CS_PLATFORM_CODE_MAX];
+    size_t code_count = 0;
+    const cs_platform_info *gba = cs_platform_find("GBA");
+    const cs_platform_info *fc = cs_platform_find("FC");
+    const cs_platform_info *ports = cs_platform_find("PORTS");
+
+    assert(gba != NULL);
+    assert(fc != NULL);
+    assert(ports != NULL);
+
+    root = mkdtemp(template);
+    assert(root != NULL);
+    assert(snprintf(roms_dir, sizeof(roms_dir), "%s/Roms", root) > 0);
+    assert(snprintf(emus_root, sizeof(emus_root), "%s/Emus", root) > 0);
+    assert(snprintf(emus_platform_dir, sizeof(emus_platform_dir), "%s/Emus/tg5040", root) > 0);
+    assert(snprintf(system_root, sizeof(system_root), "%s/.system", root) > 0);
+    assert(snprintf(system_platform_dir, sizeof(system_platform_dir), "%s/.system/tg5050", root) > 0);
+    assert(snprintf(system_paks_dir, sizeof(system_paks_dir), "%s/.system/tg5050/paks", root) > 0);
+    assert(snprintf(system_emus_dir, sizeof(system_emus_dir), "%s/.system/tg5050/paks/Emus", root) > 0);
+    assert(snprintf(gba_pak, sizeof(gba_pak), "%s/GBA.pak", emus_platform_dir) > 0);
+    assert(snprintf(fc_pak, sizeof(fc_pak), "%s/NES.pak", system_emus_dir) > 0);
+
+    make_dir(roms_dir);
+    make_dir(emus_root);
+    make_dir(emus_platform_dir);
+    make_dir(system_root);
+    make_dir(system_platform_dir);
+    make_dir(system_paks_dir);
+    make_dir(system_emus_dir);
+    make_dir(gba_pak);
+    make_dir(fc_pak);
+
+    set_sdcard_root_realpath(root);
+    assert(cs_paths_init(&paths) == 0);
+    assert(cs_platform_collect_installed_emulators(&paths, codes, sizeof(codes) / sizeof(codes[0]), &code_count) == 0);
+    assert(code_count == 2);
+    assert(cs_platform_has_installed_emulator(gba, (const char (*)[CS_PLATFORM_CODE_MAX]) codes, code_count) == 1);
+    assert(cs_platform_has_installed_emulator(fc, (const char (*)[CS_PLATFORM_CODE_MAX]) codes, code_count) == 1);
+    assert(cs_platform_has_installed_emulator(ports, (const char (*)[CS_PLATFORM_CODE_MAX]) codes, code_count) == 1);
+
+    assert(rmdir(gba_pak) == 0);
+    assert(rmdir(fc_pak) == 0);
+    assert(rmdir(system_emus_dir) == 0);
+    assert(rmdir(system_paks_dir) == 0);
+    assert(rmdir(system_platform_dir) == 0);
+    assert(rmdir(system_root) == 0);
+    assert(rmdir(emus_platform_dir) == 0);
+    assert(rmdir(emus_root) == 0);
     assert(rmdir(roms_dir) == 0);
     assert(rmdir(root) == 0);
 }
@@ -349,7 +394,8 @@ int main(void) {
     test_parse_rejects_unsafe_custom_platform_codes();
     test_alias_rom_directories_are_resolved();
     test_shortcut_directories_are_excluded_from_discovery();
-    test_textures_directory_is_exposed_as_custom_platform();
-    test_custom_platform_icons_are_mapped();
+    test_custom_rom_directories_are_not_exposed_in_library();
+    test_ports_are_only_discovered_when_installed();
+    test_emulator_scan_checks_emus_and_system_paks();
     return 0;
 }

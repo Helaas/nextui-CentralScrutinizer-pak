@@ -85,6 +85,43 @@ static int cs_settings_ensure_parent_dir(const char *path) {
     return 0;
 }
 
+static int cs_settings_fsync_parent_dir(const char *path) {
+    char parent[CS_PATH_MAX];
+    size_t i;
+    int dir_fd;
+    int rc = -1;
+
+    if (!path) {
+        return -1;
+    }
+    if (CS_SAFE_SNPRINTF(parent, sizeof(parent), "%s", path) != 0) {
+        return -1;
+    }
+
+    for (i = strlen(parent); i > 0; --i) {
+        if (parent[i - 1] == '/') {
+            parent[i - 1] = '\0';
+            break;
+        }
+    }
+    if (i == 0 || parent[0] == '\0') {
+        return -1;
+    }
+
+    dir_fd = open(parent, O_RDONLY | O_DIRECTORY);
+    if (dir_fd < 0) {
+        return -1;
+    }
+    if (fsync(dir_fd) == 0) {
+        rc = 0;
+    }
+    if (close(dir_fd) != 0) {
+        return -1;
+    }
+
+    return rc;
+}
+
 int cs_settings_default_terminal_enabled(void) {
 #if defined(PLATFORM_MAC)
     return 1;
@@ -221,6 +258,9 @@ int cs_settings_save(const cs_paths *paths, const cs_settings *settings) {
 
     if (rename(temp_path, path) != 0) {
         unlink(temp_path);
+        return -1;
+    }
+    if (cs_settings_fsync_parent_dir(path) != 0) {
         return -1;
     }
 

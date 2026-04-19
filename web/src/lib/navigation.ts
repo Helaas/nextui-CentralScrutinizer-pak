@@ -1,4 +1,4 @@
-import type { BrowserScope, ToolKey } from "./types";
+import type { BrowserScope, LibraryEmuFilter, ToolKey } from "./types";
 
 export type AppDestination = "library" | "tools";
 
@@ -28,6 +28,12 @@ export function readShowEmptyPlatforms(search: string): boolean {
   const params = new URLSearchParams(search);
 
   return params.get("showEmpty") === "1";
+}
+
+export function readLibraryEmuFilter(search: string): LibraryEmuFilter {
+  const params = new URLSearchParams(search);
+
+  return params.get("emu") === "all" ? "all" : "installed";
 }
 
 export function readViewState(search: string): AppViewState {
@@ -70,7 +76,7 @@ export function readViewState(search: string): AppViewState {
 
 export function writeViewState(
   state: AppViewState,
-  options?: { showEmptyPlatforms?: boolean },
+  options?: { showEmptyPlatforms?: boolean; libraryEmuFilter?: LibraryEmuFilter },
 ): string {
   const params = new URLSearchParams();
 
@@ -96,6 +102,9 @@ export function writeViewState(
   }
   if (state.view !== "pair" && state.destination === "library" && options?.showEmptyPlatforms) {
     params.set("showEmpty", "1");
+  }
+  if (state.view !== "pair" && state.destination === "library" && options?.libraryEmuFilter === "all") {
+    params.set("emu", "all");
   }
 
   return `?${params.toString()}`;

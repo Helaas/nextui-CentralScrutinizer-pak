@@ -56,6 +56,12 @@ int cs_paths_init(cs_paths *paths) {
     if (write_sdcard_root(temp.sdcard_root, sizeof(temp.sdcard_root), sd, "/mnt/SDCARD") != 0) {
         return -1;
     }
+    if (write_joined(temp.system_root, sizeof(temp.system_root), temp.sdcard_root, "/.system") != 0) {
+        return -1;
+    }
+    if (write_joined(temp.emus_root, sizeof(temp.emus_root), temp.sdcard_root, "/Emus") != 0) {
+        return -1;
+    }
     if (write_joined(temp.shared_userdata_root, sizeof(temp.shared_userdata_root), temp.sdcard_root, "/.userdata/shared") != 0) {
         return -1;
     }

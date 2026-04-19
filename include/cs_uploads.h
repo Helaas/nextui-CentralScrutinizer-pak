@@ -22,6 +22,10 @@ int cs_upload_plan_make(const cs_paths *paths,
                         cs_upload_plan *plan);
 
 int cs_upload_prepare_temp_root(const cs_paths *paths);
+int cs_upload_reserve_temp_path(const cs_paths *paths,
+                                const char *filename,
+                                char *buffer,
+                                size_t buffer_len);
 int cs_upload_promote(const cs_upload_plan *plan);
 int cs_upload_promote_replace(const cs_upload_plan *plan);
 

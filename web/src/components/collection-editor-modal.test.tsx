@@ -22,6 +22,14 @@ function supportedResources() {
   };
 }
 
+function emulatorState() {
+  return {
+    requiresEmulator: true,
+    emulatorInstalled: true,
+    emulatorWarning: null,
+  };
+}
+
 describe("CollectionEditorModal", () => {
   afterEach(() => {
     cleanup();
@@ -40,6 +48,7 @@ describe("CollectionEditorModal", () => {
               group: "Nintendo",
               icon: "GBA",
               isCustom: false,
+              ...emulatorState(),
               romPath: "Roms/Game Boy Advance (GBA)",
               savePath: "Saves/GBA",
               biosPath: "Bios/GBA",
