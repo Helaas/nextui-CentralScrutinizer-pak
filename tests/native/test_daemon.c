@@ -16,6 +16,7 @@
 #include "cs_app.h"
 #include "cs_auth.h"
 #include "cs_daemon.h"
+#include "cs_keep_awake.h"
 #include "cs_paths.h"
 #include "cs_settings.h"
 
@@ -188,6 +189,83 @@ static void write_settings(const cs_paths *paths, int keep_awake_in_background) 
     assert(cs_settings_save(paths, &settings) == 0);
 }
 
+static void make_minui_settings_path(const cs_paths *paths, char *buffer, size_t buffer_len) {
+    assert(paths != NULL);
+    assert(buffer != NULL);
+    assert(snprintf(buffer, buffer_len, "%s/minuisettings.txt", paths->shared_userdata_root) < (int) buffer_len);
+}
+
+static void make_keep_awake_state_path(const cs_paths *paths, char *buffer, size_t buffer_len) {
+    assert(paths != NULL);
+    assert(buffer != NULL);
+    assert(snprintf(buffer, buffer_len, "%s/nextui-keep-awake-state.txt", paths->shared_state_root) < (int) buffer_len);
+}
+
+static void write_text_file(const char *path, const char *contents) {
+    FILE *fp;
+    char parent[CS_PATH_MAX];
+    size_t i;
+
+    assert(path != NULL);
+    assert(contents != NULL);
+    assert(strlen(path) < sizeof(parent));
+    snprintf(parent, sizeof(parent), "%s", path);
+
+    for (i = strlen(parent); i > 0; --i) {
+        if (parent[i - 1] == '/') {
+            parent[i - 1] = '\0';
+            break;
+        }
+    }
+    assert(i > 0);
+    make_dir_p(parent);
+
+    fp = fopen(path, "wb");
+    assert(fp != NULL);
+    assert(fwrite(contents, 1, strlen(contents), fp) == strlen(contents));
+    assert(fclose(fp) == 0);
+}
+
+static char *read_text_file(const char *path) {
+    FILE *fp;
+    long size;
+    char *contents;
+
+    assert(path != NULL);
+    fp = fopen(path, "rb");
+    assert(fp != NULL);
+    assert(fseek(fp, 0, SEEK_END) == 0);
+    size = ftell(fp);
+    assert(size >= 0);
+    assert(fseek(fp, 0, SEEK_SET) == 0);
+    contents = (char *) malloc((size_t) size + 1u);
+    assert(contents != NULL);
+    assert(size == 0 || fread(contents, 1, (size_t) size, fp) == (size_t) size);
+    contents[size] = '\0';
+    assert(fclose(fp) == 0);
+    return contents;
+}
+
+static void assert_file_equals(const char *path, const char *expected) {
+    char *contents;
+
+    assert(path != NULL);
+    assert(expected != NULL);
+    contents = read_text_file(path);
+    assert(strcmp(contents, expected) == 0);
+    free(contents);
+}
+
+static void assert_file_contains(const char *path, const char *needle) {
+    char *contents;
+
+    assert(path != NULL);
+    assert(needle != NULL);
+    contents = read_text_file(path);
+    assert(strstr(contents, needle) != NULL);
+    free(contents);
+}
+
 static void run_app_child(const char *argv0,
                           const char *web_root,
                           const char *sdcard_root,
@@ -224,6 +302,8 @@ int main(void) {
     char template[] = "/tmp/cs-daemon-XXXXXX";
     char web_root[CS_PATH_MAX];
     char daemon_state_path[CS_PATH_MAX];
+    char minui_settings_path[CS_PATH_MAX];
+    char keep_awake_state_path[CS_PATH_MAX];
     char argv0[] = "test-daemon";
     char port_arg[16];
     char *sdcard_root;
@@ -242,9 +322,13 @@ int main(void) {
 
     assert(setenv("SDCARD_PATH", sdcard_root, 1) == 0);
     assert(setenv("CS_WEB_ROOT", web_root, 1) == 0);
+    assert(setenv("CS_PLATFORM_NAME_OVERRIDE", "my355", 1) == 0);
     assert(cs_paths_init(&paths) == 0);
     assert(cs_daemon_state_make_path(&paths, daemon_state_path, sizeof(daemon_state_path)) == 0);
-    assert(cs_daemon_stay_awake_disable() == 0);
+    make_minui_settings_path(&paths, minui_settings_path, sizeof(minui_settings_path));
+    make_keep_awake_state_path(&paths, keep_awake_state_path, sizeof(keep_awake_state_path));
+    write_text_file(minui_settings_path, "volume=6\nscreentimeout=60\n");
+    assert(cs_keep_awake_disable(&paths) == 0);
 
     assert(cs_daemon_state_is_pid_running(getpid()) == 1);
 
@@ -259,23 +343,27 @@ int main(void) {
     state.port = 8877;
     write_settings(&paths, 1);
     assert(cs_daemon_state_save(&paths, &state) == 0);
-    assert(cs_daemon_stay_awake_enable() == 0);
+    assert(cs_keep_awake_enable(&paths) == 0);
     next_port = 8877;
     assert(cs_daemon_prepare_foreground_start(&paths, next_port, 0, &next_port) == 0);
     assert(access(daemon_state_path, F_OK) != 0);
-    assert(access("/tmp/stay_awake", F_OK) != 0);
+    assert_file_equals(minui_settings_path, "volume=6\nscreentimeout=60\n");
+    assert(access(keep_awake_state_path, F_OK) != 0);
 
     port = reserve_local_port();
     assert(snprintf(port_arg, sizeof(port_arg), "%d", port) < (int) sizeof(port_arg));
+    write_text_file(minui_settings_path, "volume=6\nscreentimeout=60\n");
     run_app_child(argv0, web_root, sdcard_root, port, &status);
     assert(WIFEXITED(status));
     assert(WEXITSTATUS(status) != 0);
     assert(access(daemon_state_path, F_OK) != 0);
     assert(cs_daemon_wait_for_port_available(port, 1000) == 0);
-    assert(access("/tmp/stay_awake", F_OK) != 0);
+    assert_file_equals(minui_settings_path, "volume=6\nscreentimeout=60\n");
+    assert(access(keep_awake_state_path, F_OK) != 0);
 
     write_trust_store(&paths);
     write_settings(&paths, 0);
+    write_text_file(minui_settings_path, "volume=6\nscreentimeout=60\n");
 
     launcher_pid = fork();
     assert(launcher_pid >= 0);
@@ -304,16 +392,19 @@ int main(void) {
     wait_for_daemon_state(&paths, &state, 5000);
     assert(state.port == port);
     assert(cs_daemon_state_is_pid_running(state.pid) == 1);
-    assert(access("/tmp/stay_awake", F_OK) != 0);
+    assert_file_equals(minui_settings_path, "volume=6\nscreentimeout=60\n");
+    assert(access(keep_awake_state_path, F_OK) != 0);
 
     next_port = port;
     assert(cs_daemon_prepare_foreground_start(&paths, port, 1, &next_port) == 0);
     assert(cs_daemon_state_is_pid_running(state.pid) == 0);
     assert(access(daemon_state_path, F_OK) != 0);
     assert(cs_daemon_wait_for_port_available(port, 1000) == 0);
-    assert(access("/tmp/stay_awake", F_OK) != 0);
+    assert_file_equals(minui_settings_path, "volume=6\nscreentimeout=60\n");
+    assert(access(keep_awake_state_path, F_OK) != 0);
 
     write_settings(&paths, 1);
+    write_text_file(minui_settings_path, "volume=6\nscreentimeout=60\n");
 
     launcher_pid = fork();
     assert(launcher_pid >= 0);
@@ -342,14 +433,17 @@ int main(void) {
     wait_for_daemon_state(&paths, &state, 5000);
     assert(state.port == port);
     assert(cs_daemon_state_is_pid_running(state.pid) == 1);
-    assert(access("/tmp/stay_awake", F_OK) == 0);
+    assert_file_contains(minui_settings_path, "screentimeout=0\n");
+    assert_file_contains(minui_settings_path, "centralscrutinizer_keepawake=1\n");
+    assert(access(keep_awake_state_path, F_OK) == 0);
 
     next_port = port;
     assert(cs_daemon_prepare_foreground_start(&paths, port, 1, &next_port) == 0);
     assert(cs_daemon_state_is_pid_running(state.pid) == 0);
     assert(access(daemon_state_path, F_OK) != 0);
     assert(cs_daemon_wait_for_port_available(port, 1000) == 0);
-    assert(access("/tmp/stay_awake", F_OK) != 0);
+    assert_file_equals(minui_settings_path, "volume=6\nscreentimeout=60\n");
+    assert(access(keep_awake_state_path, F_OK) != 0);
 
     {
         pid_t stale_marker_pid = fork();
@@ -363,14 +457,16 @@ int main(void) {
         state.pid = stale_marker_pid;
         state.port = port;
         write_settings(&paths, 1);
+        write_text_file(minui_settings_path, "volume=6\nscreentimeout=60\n");
         assert(cs_daemon_state_save(&paths, &state) == 0);
-        assert(cs_daemon_stay_awake_enable() == 0);
+        assert(cs_keep_awake_enable(&paths) == 0);
         write_settings(&paths, 0);
 
         next_port = port;
         assert(cs_daemon_prepare_foreground_start(&paths, port, 1, &next_port) == 0);
         assert(access(daemon_state_path, F_OK) != 0);
-        assert(access("/tmp/stay_awake", F_OK) != 0);
+        assert_file_equals(minui_settings_path, "volume=6\nscreentimeout=60\n");
+        assert(access(keep_awake_state_path, F_OK) != 0);
     }
 
     {
@@ -379,18 +475,20 @@ int main(void) {
 
         wait_for_listener(port, 5000);
         write_settings(&paths, 1);
+        write_text_file(minui_settings_path, "volume=6\nscreentimeout=60\n");
         assert(cs_daemon_state_save(&paths, &stubborn_state) == 0);
-        assert(cs_daemon_stay_awake_enable() == 0);
+        assert(cs_keep_awake_enable(&paths) == 0);
 
         assert(cs_daemon_prepare_foreground_start(&paths, port, 1, &next_port) == 0);
         assert(cs_daemon_state_is_pid_running(stubborn_pid) == 0);
         assert(access(daemon_state_path, F_OK) != 0);
         assert(cs_daemon_wait_for_port_available(port, 1000) == 0);
-        assert(access("/tmp/stay_awake", F_OK) != 0);
+        assert_file_equals(minui_settings_path, "volume=6\nscreentimeout=60\n");
+        assert(access(keep_awake_state_path, F_OK) != 0);
         (void) waitpid(stubborn_pid, NULL, WNOHANG);
     }
 
-    assert(cs_daemon_stay_awake_disable() == 0);
+    assert(cs_keep_awake_disable(&paths) == 0);
     remove_tree(sdcard_root);
     return 0;
 }

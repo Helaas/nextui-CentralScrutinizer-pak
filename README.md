@@ -100,11 +100,12 @@ Available device-side controls:
 - **Run in Background**: leave the web server running after you exit back to NextUI, once at least one trusted browser has already paired
 
 Terminal access is disabled by default on handheld builds.
+Enabling **Keep Awake in Background** temporarily changes NextUI's **Screen timeout** setting to **Never** while background mode is active.
 
 ## Important Notes
 
 - The web dashboard can keep running in background mode after you exit, but new pairing is unavailable until you reopen the pak on the handheld.
-- Enabling **Keep Awake in Background** prevents device sleep while background mode is active and will use more battery.
+- Enabling **Keep Awake in Background** prevents device sleep while background mode is active, temporarily changes NextUI's **Screen timeout** to **Never**, and will use more battery.
 - The handheld and browser device must be on the same network.
 - The default port is `8877`. If that port is unavailable, the app may fall back to another nearby port shown on screen.
 - Browser terminal access opens a real shell on the device. Enable it only if you understand the risk.

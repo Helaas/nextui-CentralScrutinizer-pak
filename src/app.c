@@ -1,5 +1,6 @@
 #include "cs_app.h"
 #include "cs_daemon.h"
+#include "cs_keep_awake.h"
 #include "cs_settings.h"
 #include "cs_server.h"
 #include "cs_terminal.h"
@@ -633,7 +634,7 @@ int cs_app_run(int argc, char **argv) {
 
     if (app.headless) {
         int server_started = 0;
-        int stay_awake_active = 0;
+        int keep_awake_active = 0;
 
         if (cs_server_start(&app) != 0) {
             cs_app_write_daemon_ready_status(&app, CS_APP_DAEMON_READY_FAIL);
@@ -655,12 +656,12 @@ int cs_app_run(int argc, char **argv) {
                 goto headless_fail;
             }
             if (cs_app_get_keep_awake_in_background(&app)) {
-                if (cs_daemon_stay_awake_enable() != 0) {
+                if (cs_keep_awake_enable(&app.paths) != 0) {
                     cs_app_write_daemon_ready_status(&app, CS_APP_DAEMON_READY_FAIL);
                     fprintf(stderr, "Failed to enable stay-awake mode\n");
                     goto headless_fail;
                 }
-                stay_awake_active = 1;
+                keep_awake_active = 1;
             }
         }
         cs_app_write_daemon_ready_status(&app, CS_APP_DAEMON_READY_OK);
@@ -668,8 +669,8 @@ int cs_app_run(int argc, char **argv) {
         if (server_started) {
             cs_server_stop();
         }
-        if (stay_awake_active) {
-            (void) cs_daemon_stay_awake_disable();
+        if (keep_awake_active) {
+            (void) cs_keep_awake_disable(&app.paths);
         }
         if (app.daemonized) {
             (void) cs_daemon_state_clear(&app.paths);
@@ -684,8 +685,8 @@ headless_fail:
         if (server_started) {
             cs_server_stop();
         }
-        if (stay_awake_active) {
-            (void) cs_daemon_stay_awake_disable();
+        if (keep_awake_active) {
+            (void) cs_keep_awake_disable(&app.paths);
         }
         if (app.daemonized) {
             (void) cs_daemon_state_clear(&app.paths);

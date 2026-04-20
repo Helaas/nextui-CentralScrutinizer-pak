@@ -39,19 +39,17 @@ web_root = os.environ["WEB_ROOT"]
 sdcard_root = os.environ["SDCARD_ROOT"]
 log_file = os.environ["LOG_FILE"]
 port = int(os.environ["PORT"])
-stay_awake_path = "/tmp/stay_awake"
 
 log = open(log_file, "ab", buffering=0)
 
 settings_path = os.path.join(sdcard_root, ".userdata", "shared", "CentralScrutinizer", "settings.json")
+nextui_settings_path = os.path.join(sdcard_root, ".userdata", "shared", "minuisettings.txt")
+keep_awake_state_path = os.path.join(sdcard_root, ".userdata", "shared", "CentralScrutinizer", "nextui-keep-awake-state.txt")
 os.makedirs(os.path.dirname(settings_path), exist_ok=True)
 with open(settings_path, "w", encoding="utf-8") as handle:
     handle.write('{"terminal_enabled":false,"keep_awake_in_background":true}')
-
-try:
-    os.unlink(stay_awake_path)
-except FileNotFoundError:
-    pass
+with open(nextui_settings_path, "w", encoding="utf-8") as handle:
+    handle.write("volume=7\nscreentimeout=60\n")
 
 def wait_http(path: str, timeout: float = 5.0) -> str:
     deadline = time.time() + timeout
@@ -110,6 +108,28 @@ def wait_for_path_state(path: str, should_exist: bool, timeout: float = 5.0) -> 
     expected = "exist" if should_exist else "be removed"
     raise RuntimeError(f"path {path} did not {expected}")
 
+def wait_for_nextui_settings(timeout_value: int, expect_marker: bool, timeout: float = 5.0) -> None:
+    deadline = time.time() + timeout
+    timeout_line = f"screentimeout={timeout_value}"
+    marker_line = "centralscrutinizer_keepawake=1"
+    while time.time() < deadline:
+        try:
+            with open(nextui_settings_path, "r", encoding="utf-8") as handle:
+                contents = handle.read()
+        except FileNotFoundError:
+            contents = None
+        if contents is not None and timeout_line in contents and ((marker_line in contents) == expect_marker):
+            return
+        time.sleep(0.05)
+    raise RuntimeError(
+        f"NextUI settings never reached timeout {timeout_value} with marker={expect_marker}"
+    )
+
+def assert_nextui_settings_equal(expected: str) -> None:
+    with open(nextui_settings_path, "r", encoding="utf-8") as handle:
+        contents = handle.read()
+    assert contents == expected, contents
+
 foreground = subprocess.Popen(
     [
         app_bin,
@@ -121,7 +141,7 @@ foreground = subprocess.Popen(
         "--sdcard",
         sdcard_root,
     ],
-    env={**os.environ, "CS_PAIRING_CODE": "7391"},
+    env={**os.environ, "CS_PAIRING_CODE": "7391", "CS_PLATFORM_NAME_OVERRIDE": "my355"},
     stdout=log,
     stderr=log,
 )
@@ -172,6 +192,7 @@ try:
             "DAEMON_SDCARD_ROOT": sdcard_root,
             "DAEMON_START_FD": str(start_r),
             "DAEMON_READY_FD": str(ready_w),
+            "CS_PLATFORM_NAME_OVERRIDE": "my355",
         },
         stdout=log,
         stderr=log,
@@ -191,7 +212,8 @@ try:
     os.close(ready_r)
     daemon_state_path = os.path.join(sdcard_root, ".userdata", "shared", "CentralScrutinizer", "daemon-state.json")
     daemon_pid = wait_for_daemon_pid(daemon_state_path)
-    wait_for_path_state(stay_awake_path, True)
+    wait_for_path_state(keep_awake_state_path, True)
+    wait_for_nextui_settings(0, True)
 
     if os.path.isdir(f"/proc/{daemon_pid}/fd"):
         for fd in (0, 1, 2):
@@ -214,12 +236,13 @@ try:
             "--sdcard",
             sdcard_root,
         ],
-        env={**os.environ, "CS_PAIRING_CODE": "7391"},
+        env={**os.environ, "CS_PAIRING_CODE": "7391", "CS_PLATFORM_NAME_OVERRIDE": "my355"},
         stdout=log,
         stderr=log,
     )
     wait_for_pid_exit(daemon_pid)
-    wait_for_path_state(stay_awake_path, False)
+    wait_for_path_state(keep_awake_state_path, False)
+    assert_nextui_settings_equal("volume=7\nscreentimeout=60\n")
     wait_http("/api/status")
 
     with opener.open(f"http://127.0.0.1:{port}/api/session", timeout=2) as response:
@@ -245,10 +268,6 @@ finally:
             wait_for_pid_exit(daemon_pid)
         except Exception:  # noqa: BLE001
             pass
-    try:
-        os.unlink(stay_awake_path)
-    except FileNotFoundError:
-        pass
     log.close()
 
 print("PASS daemon handoff smoke")

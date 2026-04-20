@@ -23,6 +23,8 @@ struct cs_app;
 void cs_ui_model_make_active(
     cs_ui_model *model, const char *ip, int port, const char *code, int trusted_count, int terminal_enabled);
 void cs_ui_model_make_offline(cs_ui_model *model);
+int cs_ui_keep_awake_enable_requires_confirmation(void);
+const char *cs_ui_keep_awake_enable_warning_message(void);
 int cs_ui_init(void);
 void cs_ui_shutdown(void);
 void cs_ui_show_error(const char *message);

@@ -1,4 +1,5 @@
 #include "cs_app.h"
+#include "cs_keep_awake.h"
 #include "cs_server.h"
 #include "cs_ui.h"
 
@@ -46,6 +47,14 @@ void cs_ui_model_make_offline(cs_ui_model *model) {
     memset(model, 0, sizeof(*model));
     model->is_offline = 1;
     snprintf(model->status_message, sizeof(model->status_message), "%s", "Connect Wi-Fi in NextUI first.");
+}
+
+int cs_ui_keep_awake_enable_requires_confirmation(void) {
+    return cs_keep_awake_current_platform_uses_settings_override();
+}
+
+const char *cs_ui_keep_awake_enable_warning_message(void) {
+    return "Enabling this will temporarily change NextUI's Screen timeout setting to Never while Central Scrutinizer runs in background mode. The previous timeout is restored when background mode ends.";
 }
 
 #if defined(CS_ENABLE_APOSTROPHE_UI)
@@ -359,7 +368,27 @@ static int cs_ui_run_settings_screen(cs_app *app) {
                 continue;
             }
             if (result.focused_index == 1) {
-                if (cs_app_set_keep_awake_in_background(app, items[1].selected_option == 1) != 0) {
+                int enable_requested = items[1].selected_option == 1;
+
+                if (enable_requested && !cs_app_get_keep_awake_in_background(app)
+                    && cs_ui_keep_awake_enable_requires_confirmation()) {
+                    ap_footer_item confirm_footer[] = {
+                        {.button = AP_BTN_B, .label = "Cancel"},
+                        {.button = AP_BTN_A, .label = "Enable", .is_confirm = true},
+                    };
+                    ap_message_opts confirm_opts = {
+                        .message = cs_ui_keep_awake_enable_warning_message(),
+                        .footer = confirm_footer,
+                        .footer_count = (int) (sizeof(confirm_footer) / sizeof(confirm_footer[0])),
+                    };
+                    ap_confirm_result confirm_result = {0};
+
+                    (void) ap_confirmation(&confirm_opts, &confirm_result);
+                    if (!confirm_result.confirmed) {
+                        continue;
+                    }
+                }
+                if (cs_app_set_keep_awake_in_background(app, enable_requested) != 0) {
                     cs_ui_show_settings_error("Could not save the background keep-awake setting.");
                 }
             }
