@@ -227,7 +227,7 @@ export function BrowserView({
                 }
               : undefined
           }
-          onRename={isFiles ? undefined : onRename}
+          onRename={onRename}
           onReplaceArt={isFiles ? undefined : onReplaceArt}
           scope={scope}
           tag={tag}

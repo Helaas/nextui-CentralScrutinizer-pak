@@ -401,6 +401,13 @@ static void test_reserved_temp_paths_are_unique(void) {
     assert(rmdir(sandbox_template) == 0);
 }
 
+static void test_no_replace_fallback_path(void) {
+    assert(setenv("CS_FORCE_RENAME_NOREPLACE_FALLBACK", "1", 1) == 0);
+    test_existing_destination_is_rejected();
+    test_concurrent_no_replace_promotion();
+    assert(unsetenv("CS_FORCE_RENAME_NOREPLACE_FALLBACK") == 0);
+}
+
 int main(void) {
     cs_paths paths;
     cs_upload_plan plan;
@@ -468,6 +475,7 @@ int main(void) {
     test_symlinked_temp_root_is_rejected();
     test_symlinked_guard_root_is_rejected();
     test_concurrent_no_replace_promotion();
+    test_no_replace_fallback_path();
     test_reserved_temp_paths_are_unique();
 
     return 0;

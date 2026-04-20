@@ -293,6 +293,7 @@ function FilesTable({
   onEdit,
   onNavigate,
   onNavigateParent,
+  onRename,
   tag,
 }: {
   busy: boolean;
@@ -302,6 +303,7 @@ function FilesTable({
   onEdit?: (entry: BrowserEntry) => void;
   onNavigate: (path?: string) => void;
   onNavigateParent?: () => void;
+  onRename?: (entry: BrowserEntry) => void;
   tag?: string;
 }) {
   const gridClass =
@@ -399,6 +401,20 @@ function FilesTable({
                 {formatDate(entry.modified)}
               </span>
               <div className="flex justify-end gap-1">
+                {onRename ? (
+                  <button
+                    aria-label={`Rename ${entry.name}`}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-[var(--muted)] opacity-0 transition hover:text-[var(--text)] focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={busy}
+                    onClick={() => {
+                      onRename(entry);
+                    }}
+                    type="button"
+                  >
+                    <PencilGlyph />
+                    Rename
+                  </button>
+                ) : null}
                 {onEdit && !isDir && isPlaintextFileName(entry.name) ? (
                   <button
                     aria-label={`Edit ${entry.name}`}
@@ -577,6 +593,7 @@ export function BrowserTable({
         onEdit={onEdit}
         onNavigate={onNavigate}
         onNavigateParent={onNavigateParent}
+        onRename={onRename}
         tag={tag}
       />
     );

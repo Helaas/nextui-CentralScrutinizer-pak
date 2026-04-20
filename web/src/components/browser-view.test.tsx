@@ -330,6 +330,7 @@ describe("BrowserView", () => {
     expect(screen.queryByText("1 selected")).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete Selected" })).toBeNull();
     expect(screen.queryByRole("button", { name: "More actions for Pokemon Emerald.gba" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Rename Pokemon Emerald.gba" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Delete Pokemon Emerald.gba" })).toBeTruthy();
   });
 

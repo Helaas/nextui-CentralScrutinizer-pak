@@ -784,6 +784,52 @@ describe("Page", () => {
     );
   });
 
+  it("renames a files entry through the inline rename action from the tool workspace", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Archives");
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser
+      .mockResolvedValueOnce(
+        fileBrowserResponse([
+          {
+            name: "Saves",
+            path: "Saves",
+            type: "directory",
+            size: 0,
+            modified: 1_700_000_000,
+            status: "",
+            thumbnailPath: "",
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fileBrowserResponse([
+          {
+            name: "Archives",
+            path: "Archives",
+            type: "directory",
+            size: 0,
+            modified: 1_700_000_100,
+            status: "",
+            thumbnailPath: "",
+          },
+        ]),
+      );
+    mockApi.renameItem.mockResolvedValue(undefined);
+
+    render(<Page />);
+
+    await openFileBrowserTool();
+    fireEvent.click(await screen.findByRole("button", { name: "Rename Saves" }));
+
+    await screen.findByText("Renamed Saves to Archives.");
+    expect(mockApi.renameItem).toHaveBeenCalledTimes(1);
+    expect(mockApi.renameItem).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "files", tag: undefined, from: "Saves", to: "Archives" }),
+      "csrf-token",
+    );
+  });
+
   it("marks the file browser tool busy during a manual refresh", async () => {
     let resolveRefresh: ((value: Awaited<ReturnType<typeof mockApi.getBrowser>>) => void) | undefined;
 

@@ -1,4 +1,5 @@
 #include "cs_file_ops.h"
+#include "cs_rename_fallback_internal.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -231,31 +232,112 @@ static int cs_atomic_rename_no_replace(int from_dir_fd,
                                        const char *to_name,
                                        const struct stat *source_st) {
     struct stat final_st;
+    int force_fallback;
 
     if (!from_name || !to_name || !source_st) {
         return -1;
     }
 
+    force_fallback = cs_rename_noreplace_force_fallback();
+
 #if defined(__APPLE__) && defined(RENAME_EXCL)
-    if (renameatx_np(from_dir_fd, from_name, to_dir_fd, to_name, RENAME_EXCL) != 0) {
-        return -1;
+    if (!force_fallback) {
+        if (renameatx_np(from_dir_fd, from_name, to_dir_fd, to_name, RENAME_EXCL) != 0) {
+            if (!cs_rename_noreplace_should_fallback(errno)) {
+                return -1;
+            }
+        } else {
+            goto verify_final;
+        }
     }
 #elif defined(__linux__) && defined(SYS_renameat2)
-    if (syscall(SYS_renameat2, from_dir_fd, from_name, to_dir_fd, to_name, RENAME_NOREPLACE) != 0) {
-        return -1;
+    if (!force_fallback) {
+        if (syscall(SYS_renameat2, from_dir_fd, from_name, to_dir_fd, to_name, RENAME_NOREPLACE) != 0) {
+            if (!cs_rename_noreplace_should_fallback(errno)) {
+                return -1;
+            }
+        } else {
+            goto verify_final;
+        }
     }
 #else
-    errno = ENOTSUP;
-    return -1;
+    /* No native atomic no-replace primitive on this platform. */
+    force_fallback = 1;
 #endif
 
-    if (fstatat(to_dir_fd, to_name, &final_st, AT_SYMLINK_NOFOLLOW) != 0 || !S_ISREG(final_st.st_mode)) {
-        (void) unlinkat(to_dir_fd, to_name, 0);
+    if (S_ISREG(source_st->st_mode)) {
+        int placeholder_fd = -1;
+
+        /* Some target filesystems, including tg5050's fuseblk SD mount, do
+         * not support hard links. Reserve the destination name with O_EXCL
+         * and then rename over the empty placeholder as the fallback. */
+        placeholder_fd = openat(to_dir_fd, to_name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+        if (placeholder_fd < 0) {
+            return -1;
+        }
+        if (close(placeholder_fd) != 0) {
+            int saved_errno = errno;
+
+            (void) unlinkat(to_dir_fd, to_name, 0);
+            errno = saved_errno;
+            return -1;
+        }
+        if (renameat(from_dir_fd, from_name, to_dir_fd, to_name) != 0) {
+            int saved_errno = errno;
+
+            (void) unlinkat(to_dir_fd, to_name, 0);
+            errno = saved_errno;
+            return -1;
+        }
+    } else if (S_ISDIR(source_st->st_mode)) {
+        /* Directories cannot be hardlinked, so fall back to mkdirat
+         * placeholder + renameat. Residual race: a concurrent writer could
+         * replace the empty placeholder — but renameat over a populated
+         * directory fails with ENOTEMPTY, so a non-empty swap cannot be
+         * silently clobbered. An empty swap is indistinguishable from our
+         * own placeholder; the post-rename dev/ino check still detects a
+         * source-side swap. */
+        if (mkdirat(to_dir_fd, to_name, 0700) != 0) {
+            return -1;
+        }
+        if (renameat(from_dir_fd, from_name, to_dir_fd, to_name) != 0) {
+            int saved_errno = errno;
+
+            (void) unlinkat(to_dir_fd, to_name, AT_REMOVEDIR);
+            errno = saved_errno;
+            return -1;
+        }
+    } else {
+        errno = EINVAL;
+        return -1;
+    }
+
+verify_final:
+    if (fstatat(to_dir_fd, to_name, &final_st, AT_SYMLINK_NOFOLLOW) != 0) {
+        if (S_ISDIR(source_st->st_mode)) {
+            (void) unlinkat(to_dir_fd, to_name, AT_REMOVEDIR);
+        } else {
+            (void) unlinkat(to_dir_fd, to_name, 0);
+        }
+        errno = EIO;
+        return -1;
+    }
+    if ((S_ISREG(source_st->st_mode) && !S_ISREG(final_st.st_mode))
+        || (S_ISDIR(source_st->st_mode) && !S_ISDIR(final_st.st_mode))) {
+        if (S_ISDIR(final_st.st_mode)) {
+            (void) unlinkat(to_dir_fd, to_name, AT_REMOVEDIR);
+        } else {
+            (void) unlinkat(to_dir_fd, to_name, 0);
+        }
         errno = EIO;
         return -1;
     }
     if (final_st.st_dev != source_st->st_dev || final_st.st_ino != source_st->st_ino) {
-        (void) unlinkat(to_dir_fd, to_name, 0);
+        if (S_ISDIR(final_st.st_mode)) {
+            (void) unlinkat(to_dir_fd, to_name, AT_REMOVEDIR);
+        } else {
+            (void) unlinkat(to_dir_fd, to_name, 0);
+        }
         errno = EIO;
         return -1;
     }

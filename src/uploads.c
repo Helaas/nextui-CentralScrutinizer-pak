@@ -1,13 +1,13 @@
 #include "cs_uploads.h"
 
 #include "cs_file_ops.h"
+#include "cs_rename_fallback_internal.h"
 
 #include <errno.h>
 #include <fcntl.h>
 #include <stdatomic.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -296,30 +296,71 @@ static int cs_upload_atomic_promote_no_replace(int temp_dir_fd,
                                                const char *final_name,
                                                const struct stat *temp_st) {
     struct stat final_st;
+    int force_fallback;
 
     if (!temp_name || !final_name || !temp_st) {
         return -1;
     }
 
+    force_fallback = cs_rename_noreplace_force_fallback();
+
 #if defined(__APPLE__) && defined(RENAME_EXCL)
-    if (renameatx_np(temp_dir_fd, temp_name, final_dir_fd, final_name, RENAME_EXCL) != 0) {
-        return -1;
+    if (!force_fallback) {
+        if (renameatx_np(temp_dir_fd, temp_name, final_dir_fd, final_name, RENAME_EXCL) != 0) {
+            if (!cs_rename_noreplace_should_fallback(errno)) {
+                return -1;
+            }
+        } else {
+            goto verify_final;
+        }
     }
 #elif defined(__linux__) && defined(SYS_renameat2)
-    if (syscall(SYS_renameat2,
-                temp_dir_fd,
-                temp_name,
-                final_dir_fd,
-                final_name,
-                RENAME_NOREPLACE)
-        != 0) {
-        return -1;
+    if (!force_fallback) {
+        if (syscall(SYS_renameat2,
+                    temp_dir_fd,
+                    temp_name,
+                    final_dir_fd,
+                    final_name,
+                    RENAME_NOREPLACE)
+            != 0) {
+            if (!cs_rename_noreplace_should_fallback(errno)) {
+                return -1;
+            }
+        } else {
+            goto verify_final;
+        }
     }
 #else
-    errno = ENOTSUP;
-    return -1;
+    /* No native atomic no-replace primitive on this platform. */
+    force_fallback = 1;
 #endif
 
+    /* Some target filesystems, including tg5050's fuseblk SD mount, do not
+     * support hard links. Reserve the destination name with O_EXCL and then
+     * rename over the empty placeholder as the cross-filesystem fallback. */
+    {
+        int placeholder_fd = openat(final_dir_fd, final_name, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, 0600);
+
+        if (placeholder_fd < 0) {
+            return -1;
+        }
+        if (close(placeholder_fd) != 0) {
+            int saved_errno = errno;
+
+            (void) unlinkat(final_dir_fd, final_name, 0);
+            errno = saved_errno;
+            return -1;
+        }
+    }
+    if (renameat(temp_dir_fd, temp_name, final_dir_fd, final_name) != 0) {
+        int saved_errno = errno;
+
+        (void) unlinkat(final_dir_fd, final_name, 0);
+        errno = saved_errno;
+        return -1;
+    }
+
+verify_final:
     if (fstatat(final_dir_fd, final_name, &final_st, AT_SYMLINK_NOFOLLOW) != 0
         || !S_ISREG(final_st.st_mode)) {
         (void) unlinkat(final_dir_fd, final_name, 0);

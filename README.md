@@ -6,15 +6,15 @@ It runs an HTTP server while the pak is open, and it can hand that server off to
 
 ## What It Does
 
-- Shows your library grouped by platform family with dedicated console icons
-- Lets you browse ROMs, saves, save states, BIOS, overlays, and cheats by system
-- Supports file upload, folder upload, folder creation, rename, delete, and plaintext file editing
-- Lets you replace ROM artwork from the browser
+- Shows your library grouped by platform family with dedicated console icons, emulator availability warnings, and installed/all emulator filters
+- Lets you browse ROMs, saves, save-state bundles, BIOS, overlays, and cheats by system
+- Supports upload, download, rename, delete, and folder creation where the current workspace allows it
+- Lets you replace ROM artwork from the browser with PNG files
 - Includes a full SD card file browser workspace
-- Includes collection management for `Collections/*.txt` playlists and collection artwork
-- Includes a screenshot browser with preview, delete, and bulk zip download
+- Includes collection management for `Collections/*.txt` playlists, collection icons, and shared collection background art
+- Includes a screenshot browser with preview, individual download/delete, and bulk zip download
 - Includes a Mac dot-cleanup tool for removing safe Finder and archive artifacts from the SD card
-- Includes a log viewer with live tail and bulk log download
+- Includes a log viewer with live tail plus single-file and bulk log download
 - Includes optional browser terminal access when enabled on the handheld
 
 ## Supported Platforms
@@ -36,12 +36,12 @@ No cloud account or external service is required. The dashboard is served direct
 
 ## Installation
 
-Install `CentralScrutinizer.pakz` the same way you install other NextUI paks.
+Install `Central Scrutinizer.pakz` the same way you install other NextUI paks.
 
 Typical options:
 
 1. Install it from your preferred pak source/store if provided there.
-2. Or copy the unpacked pak into your device's `Tools/<platform>/CentralScrutinizer.pak` directory.
+2. Or copy the unpacked pak into your device's `Tools/<platform>/Central Scrutinizer.pak` directory.
 
 After installation, launch **The Central Scrutinizer** from the Tools menu on the handheld.
 
@@ -70,19 +70,23 @@ The Library view groups systems by family and shows counts for ROMs, saves, save
 From the library and per-system workspaces you can:
 
 - Browse ROM folders
+- Upload files into managed ROM, save, BIOS, overlay, and cheat folders
+- Upload folders and create new folders inside ROM workspaces
 - Download files directly
+- Rename and delete managed items
 - Replace ROM artwork with PNG images
 - Inspect saves, save states, BIOS, overlays, and cheats
-- Search platforms and folder contents
-- Hide or show empty platforms
+- Open a dedicated Save States view with previews plus grouped download/delete actions
+- Search platforms and current folder contents
+- Filter to installed emulators only, and hide or show empty platforms
 
 ### Tools
 
 The Tools workspace includes:
 
-- **File Browser**: browse the SD card, upload files or folders, create folders, rename items, delete items, and edit plaintext files
-- **Collections**: create and edit `Collections/*.txt` playlists, reorder ROM paths, and manage collection icons/backgrounds
-- **Screenshots**: preview images from `Screenshots/`, delete them, or download all screenshots as a zip
+- **File Browser**: browse the SD card, upload files or folders, create folders, rename items, delete items, run recursive name searches, preview common image files, and edit plaintext files
+- **Collections**: create and edit `Collections/*.txt` playlists, reorder ROM paths, manage collection icons, and set or remove the shared collections background
+- **Screenshots**: preview images from `Screenshots/`, download or delete them individually, or download all screenshots as a zip
 - **Mac Dot Cleanup**: scan for `.DS_Store`, `._*`, `__MACOSX`, and top-level macOS transfer folders, then delete them in one pass
 - **Log Viewer**: browse logs under `.userdata`, live-tail a log file, and download one or all logs
 - **Terminal**: open a real shell in the browser if terminal access has been enabled on the handheld
@@ -95,12 +99,12 @@ Available device-side controls:
 
 - **Terminal**: enable or disable browser terminal access
 - **Keep Awake in Background**: prevent the device from sleeping while Central Scrutinizer is running in background mode
-- **Refresh**: refresh the server screen state
 - **Revoke Trusted Browsers**: clear trusted browser sessions and force re-pairing
 - **Run in Background**: leave the web server running after you exit back to NextUI, once at least one trusted browser has already paired
 
 Terminal access is disabled by default on handheld builds.
 Enabling **Keep Awake in Background** temporarily changes NextUI's **Screen timeout** setting to **Never** while background mode is active.
+The server screen itself refreshes automatically while the pak is open.
 
 ## Important Notes
 

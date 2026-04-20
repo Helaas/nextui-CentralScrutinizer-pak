@@ -33,6 +33,11 @@ int main(void) {
     char deeper_dir[1024];
     char nested_file[1024];
     char deeper_file[1024];
+    char fallback_source_path[1024];
+    char fallback_renamed_path[1024];
+    char folder_source_path[1024];
+    char folder_renamed_path[1024];
+    char folder_child_path[1024];
 
     assert(cs_validate_relative_path("Game Boy Advance (GBA)/Golden Sun.gba") == 0);
     assert(cs_validate_relative_path("Game Boy Advance (GBA)/.media/Golden Sun.png") == 0);
@@ -64,6 +69,12 @@ int main(void) {
     assert(snprintf(deeper_dir, sizeof(deeper_dir), "%s/nested", nested_dir) > 0);
     assert(snprintf(nested_file, sizeof(nested_file), "%s/notes.txt", nested_dir) > 0);
     assert(snprintf(deeper_file, sizeof(deeper_file), "%s/deeper.txt", deeper_dir) > 0);
+    assert(snprintf(fallback_source_path, sizeof(fallback_source_path), "%s/fallback-source.txt", managed_dir) > 0);
+    assert(snprintf(fallback_renamed_path, sizeof(fallback_renamed_path), "%s/fallback-renamed.txt", managed_dir)
+           > 0);
+    assert(snprintf(folder_source_path, sizeof(folder_source_path), "%s/folder-source", managed_dir) > 0);
+    assert(snprintf(folder_renamed_path, sizeof(folder_renamed_path), "%s/folder-renamed", managed_dir) > 0);
+    assert(snprintf(folder_child_path, sizeof(folder_child_path), "%s/inside.txt", folder_source_path) > 0);
 
     write_file(source_path, "payload");
     assert(cs_safe_rename_under_root(root_path,
@@ -74,6 +85,30 @@ int main(void) {
     assert(access(renamed_path, F_OK) == 0);
     assert(cs_safe_delete_under_root(root_path, "Game Boy Advance (GBA)/renamed.txt") == 0);
     assert(access(renamed_path, F_OK) != 0);
+
+    write_file(fallback_source_path, "fallback");
+    assert(setenv("CS_FORCE_RENAME_NOREPLACE_FALLBACK", "1", 1) == 0);
+    assert(cs_safe_rename_under_root(root_path,
+                                     "Game Boy Advance (GBA)/fallback-source.txt",
+                                     "Game Boy Advance (GBA)/fallback-renamed.txt")
+           == 0);
+    assert(unsetenv("CS_FORCE_RENAME_NOREPLACE_FALLBACK") == 0);
+    assert(access(fallback_source_path, F_OK) != 0);
+    assert(access(fallback_renamed_path, F_OK) == 0);
+    assert(cs_safe_delete_under_root(root_path, "Game Boy Advance (GBA)/fallback-renamed.txt") == 0);
+
+    assert(mkdir(folder_source_path, 0775) == 0);
+    write_file(folder_child_path, "folder");
+    assert(setenv("CS_FORCE_RENAME_NOREPLACE_FALLBACK", "1", 1) == 0);
+    assert(cs_safe_rename_under_root(root_path,
+                                     "Game Boy Advance (GBA)/folder-source",
+                                     "Game Boy Advance (GBA)/folder-renamed")
+           == 0);
+    assert(unsetenv("CS_FORCE_RENAME_NOREPLACE_FALLBACK") == 0);
+    assert(access(folder_source_path, F_OK) != 0);
+    assert(access(folder_renamed_path, F_OK) == 0);
+    assert(cs_safe_delete_under_root(root_path, "Game Boy Advance (GBA)/folder-renamed") == 0);
+
     assert(mkdir(nested_dir, 0775) == 0);
     assert(mkdir(deeper_dir, 0775) == 0);
     write_file(nested_file, "nested");

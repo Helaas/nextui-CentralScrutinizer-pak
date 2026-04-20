@@ -149,6 +149,36 @@ describe("BrowserTable", () => {
     expect(screen.queryByRole("button", { name: "Edit Saves" })).toBeNull();
   });
 
+  it("surfaces a Rename action for files rows when onRename is provided", () => {
+    const onRename = vi.fn();
+    const fileEntry = {
+      name: "readme.txt",
+      path: "readme.txt",
+      type: "file" as const,
+      size: 12,
+      modified: 1_700_000_000,
+      status: "",
+      thumbnailPath: "",
+    };
+    const folderEntry = {
+      name: "Saves",
+      path: "Saves",
+      type: "directory" as const,
+      size: 0,
+      modified: 1_700_000_200,
+      status: "",
+      thumbnailPath: "",
+    };
+
+    render(<BrowserTable entries={[fileEntry, folderEntry]} onNavigate={vi.fn()} onRename={onRename} scope="files" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename readme.txt" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rename Saves" }));
+
+    expect(onRename).toHaveBeenNthCalledWith(1, fileEntry);
+    expect(onRename).toHaveBeenNthCalledWith(2, folderEntry);
+  });
+
   it("disables files row actions while busy", () => {
     render(
       <BrowserTable
