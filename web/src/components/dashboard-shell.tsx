@@ -39,12 +39,12 @@ export function DashboardShell({
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold">Platforms</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">Browse library content by platform family.</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
             <span>Console filter</span>
             <select

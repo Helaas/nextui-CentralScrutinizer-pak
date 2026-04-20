@@ -307,7 +307,7 @@ function FilesTable({
   tag?: string;
 }) {
   const gridClass =
-    "grid grid-cols-[minmax(0,1fr),auto] gap-3 md:grid-cols-[minmax(0,1fr)_100px_220px_120px] md:gap-4";
+    "grid grid-cols-[minmax(0,1fr),auto] gap-3 md:grid-cols-[minmax(0,1fr)_100px_220px_260px] md:gap-4";
 
   return (
     <div className="overflow-hidden rounded-[24px] border border-[var(--border)] bg-[var(--panel)]">
@@ -400,11 +400,11 @@ function FilesTable({
               <span className="hidden font-mono text-xs tabular-nums text-[var(--muted)] md:block">
                 {formatDate(entry.modified)}
               </span>
-              <div className="flex justify-end gap-1">
+              <div className="flex flex-wrap justify-end gap-1 whitespace-nowrap md:flex-nowrap">
                 {onRename ? (
                   <button
                     aria-label={`Rename ${entry.name}`}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-[var(--muted)] opacity-0 transition hover:text-[var(--text)] focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-[var(--muted)] transition hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={busy}
                     onClick={() => {
                       onRename(entry);
@@ -418,7 +418,7 @@ function FilesTable({
                 {onEdit && !isDir && isPlaintextFileName(entry.name) ? (
                   <button
                     aria-label={`Edit ${entry.name}`}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-[var(--muted)] opacity-0 transition hover:text-[var(--text)] focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-[var(--muted)] transition hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={busy}
                     onClick={() => {
                       onEdit(entry);
@@ -432,7 +432,7 @@ function FilesTable({
                 {onDelete ? (
                   <button
                     aria-label={`Delete ${entry.name}`}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-[var(--accent)] opacity-0 transition hover:text-[var(--accent-strong)] focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-[var(--accent)] transition hover:text-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={busy}
                     onClick={() => {
                       onDelete(entry);

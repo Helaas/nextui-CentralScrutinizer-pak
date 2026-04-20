@@ -179,6 +179,38 @@ describe("BrowserTable", () => {
     expect(onRename).toHaveBeenNthCalledWith(2, folderEntry);
   });
 
+  it("keeps files row actions visible without hover-only opacity classes", () => {
+    render(
+      <BrowserTable
+        entries={[
+          {
+            name: "readme.txt",
+            path: "readme.txt",
+            type: "file",
+            size: 12,
+            modified: 1_700_000_000,
+            status: "",
+            thumbnailPath: "",
+          },
+        ]}
+        onDelete={vi.fn()}
+        onEdit={vi.fn()}
+        onNavigate={vi.fn()}
+        onRename={vi.fn()}
+        scope="files"
+      />,
+    );
+
+    const renameButton = screen.getByRole("button", { name: "Rename readme.txt" });
+    const actionHeader = screen.getByText("Action").closest("div");
+
+    expect(actionHeader?.className).toContain("md:grid-cols-[minmax(0,1fr)_100px_220px_260px]");
+    expect(renameButton.parentElement?.className).toContain("flex-wrap");
+    expect(renameButton.className).not.toContain("opacity-0");
+    expect(screen.getByRole("button", { name: "Edit readme.txt" }).className).not.toContain("opacity-0");
+    expect(screen.getByRole("button", { name: "Delete readme.txt" }).className).not.toContain("opacity-0");
+  });
+
   it("disables files row actions while busy", () => {
     render(
       <BrowserTable
