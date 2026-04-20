@@ -1,0 +1,16 @@
+{
+  "name": "The Central Scrutinizer",
+  "version": "v0.1.0",
+  "type": "TOOL",
+  "description": "Device-hosted library manager for ROMs, artwork, and BIOS that can keep its HTTP server running in the background after a browser is already paired.",
+  "author": "helaas",
+  "release_filename": "Central Scrutinizer.pakz",
+  "changelog": {
+    "v0.1.0": "Initial paired web manager scaffold with Apostrophe packaging."
+  },
+  "platforms": [
+    "tg5040",
+    "tg5050",
+    "my355"
+  ]
+}
