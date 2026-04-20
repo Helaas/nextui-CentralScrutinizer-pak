@@ -27,6 +27,7 @@ SRC_SERVER := src/daemon.c src/terminal.c src/app.c src/server.c src/routes_stat
 SRC_VENDOR := third_party/qrcodegen.c
 SRC_APP := src/main.c $(SRC_COMMON) $(SRC_SERVER) $(SRC_VENDOR)
 COMMON_INCLUDES := -Iinclude -Ithird_party/civetweb/include -I$(APOSTROPHE_DIR)/include -DUSE_WEBSOCKET
+WEB_DEPS_STAMP := web/node_modules/next/package.json
 
 .PHONY: all mac tg5040 tg5050 my355 package package-local package-tg5040 package-tg5050 package-my355 do-package deploy deploy-platform clean test-native test-native-all test-smoke test-all web-install web-test web-build preview preview-clear-port update-apostrophe
 
@@ -103,14 +104,16 @@ test-all:
 	@$(MAKE) web-test
 	@$(MAKE) test-smoke
 
-web-install:
+$(WEB_DEPS_STAMP): web/package.json web/package-lock.json
 	npm --prefix web ci
 
-web-test:
+web-install: $(WEB_DEPS_STAMP)
+
+web-test: $(WEB_DEPS_STAMP)
 	npm --prefix web test -- --run
 	npm --prefix web run test:e2e
 
-web-build:
+web-build: $(WEB_DEPS_STAMP)
 	npm --prefix web run build
 
 package-tg5040: tg5040 web-build
