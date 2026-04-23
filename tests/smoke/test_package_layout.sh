@@ -7,7 +7,7 @@ make package-local >/dev/null
 
 WORK_DIR="$(mktemp -d /tmp/cs-package-smoke-XXXXXX)"
 SDCARD_ROOT="$WORK_DIR/sdcard"
-PAK_DIR="build/staging/Tools/tg5040/CentralScrutinizer.pak"
+PAK_DIR="build/staging/Tools/tg5040/Central Scrutinizer.pak"
 PORT=8891
 
 prepare_mock_sdcard "$SDCARD_ROOT"
@@ -25,13 +25,14 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 for platform in tg5040 tg5050 my355; do
-    pak_dir="build/staging/Tools/$platform/CentralScrutinizer.pak"
+    pak_dir="build/staging/Tools/$platform/Central Scrutinizer.pak"
     test -f "$pak_dir/central-scrutinizer"
     test -f "$pak_dir/launch.sh"
     test -f "$pak_dir/pak.json"
     test -f "$pak_dir/resources/web/index.html"
     test -x "$pak_dir/central-scrutinizer"
     test -x "$pak_dir/launch.sh"
+    diff -qr web/out "$pak_dir/resources/web" >/dev/null
 done
 
 (
@@ -58,6 +59,8 @@ ROOT_HTML="$(curl -sf "http://127.0.0.1:$PORT/")"
 echo "$ROOT_HTML" | grep -qi '<!doctype html'
 echo "$ROOT_HTML" | grep -Fq '__next'
 
-test -f "build/release/local/CentralScrutinizer-local.pakz"
+test -f "build/release/local/Central.Scrutinizer-local.pakz"
+test ! -e "build/release/local/Central Scrutinizer-local.pakz"
+test ! -e "build/release/local/CentralScrutinizer-local.pakz"
 
 echo "PASS package layout smoke"

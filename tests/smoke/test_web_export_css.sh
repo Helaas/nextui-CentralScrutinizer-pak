@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-npm --prefix web run build >/tmp/cs-web-build.log
+make web-build >/tmp/cs-web-build.log
 
 set -- web/out/_next/static/chunks/*.css
 if [ ! -e "$1" ]; then

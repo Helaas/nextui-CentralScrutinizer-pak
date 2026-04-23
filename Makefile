@@ -2,7 +2,8 @@ SHELL := /bin/bash
 
 APP_NAME := central-scrutinizer
 PAK_DIR_NAME := Central Scrutinizer.pak
-RELEASE_NAME := Central Scrutinizer
+RELEASE_FILENAME := Central.Scrutinizer.pakz
+LOCAL_RELEASE_FILENAME := Central.Scrutinizer-local.pakz
 BUILD_DIR := build
 DIST_DIR := $(BUILD_DIR)/release
 STAGING_DIR := $(BUILD_DIR)/staging
@@ -114,6 +115,7 @@ web-test: $(WEB_DEPS_STAMP)
 	npm --prefix web run test:e2e
 
 web-build: $(WEB_DEPS_STAMP)
+	rm -rf web/out
 	npm --prefix web run build
 
 package-tg5040: tg5040 web-build
@@ -135,6 +137,11 @@ do-package:
 	@cp "$(BIN_SRC)" "$(BUILD_DIR)/$(PLATFORM)/$(PAK_DIR_NAME)/$(APP_NAME)"
 	@cp launch.sh pak.json "$(BUILD_DIR)/$(PLATFORM)/$(PAK_DIR_NAME)/"
 	@cp -a web/out/. "$(BUILD_DIR)/$(PLATFORM)/$(PAK_DIR_NAME)/resources/web/"
+	@diff -qr web/out "$(BUILD_DIR)/$(PLATFORM)/$(PAK_DIR_NAME)/resources/web" >/dev/null || { \
+		echo "Error: packaged web files differ from web/out for $(PLATFORM)." >&2; \
+		diff -qr web/out "$(BUILD_DIR)/$(PLATFORM)/$(PAK_DIR_NAME)/resources/web" >&2 || true; \
+		exit 1; \
+	}
 
 package: package-tg5040 package-tg5050 package-my355
 	@rm -rf $(STAGING_DIR)
@@ -143,8 +150,8 @@ package: package-tg5040 package-tg5050 package-my355
 		mkdir -p "$(STAGING_DIR)/Tools/$$platform"; \
 		cp -a "$(BUILD_DIR)/$$platform/$(PAK_DIR_NAME)" "$(STAGING_DIR)/Tools/$$platform/"; \
 	done
-	@rm -f "$(DIST_DIR)/all/$(RELEASE_NAME).pakz"
-	@cd "$(STAGING_DIR)" && zip -9 -r "$(CURDIR)/$(DIST_DIR)/all/$(RELEASE_NAME).pakz" . -x '.*'
+	@rm -f "$(DIST_DIR)/all/$(RELEASE_FILENAME)" "$(DIST_DIR)/all/Central Scrutinizer.pakz"
+	@cd "$(STAGING_DIR)" && zip -9 -r "$(CURDIR)/$(DIST_DIR)/all/$(RELEASE_FILENAME)" . -x '.*'
 
 package-local: mac web-build
 	@rm -rf $(STAGING_DIR)
@@ -155,9 +162,14 @@ package-local: mac web-build
 		cp "$(BUILD_DIR)/mac/$(APP_NAME)" "$$pak_dir/$(APP_NAME)"; \
 		cp launch.sh pak.json "$$pak_dir/"; \
 		cp -a web/out/. "$$pak_dir/resources/web/"; \
+		diff -qr web/out "$$pak_dir/resources/web" >/dev/null || { \
+			echo "Error: staged web files differ from web/out for $$platform." >&2; \
+			diff -qr web/out "$$pak_dir/resources/web" >&2 || true; \
+			exit 1; \
+		}; \
 	done
-	@rm -f "$(DIST_DIR)/local/$(RELEASE_NAME)-local.pakz"
-	@cd "$(STAGING_DIR)" && zip -9 -r "$(CURDIR)/$(DIST_DIR)/local/$(RELEASE_NAME)-local.pakz" . -x '.*'
+	@rm -f "$(DIST_DIR)/local/$(LOCAL_RELEASE_FILENAME)" "$(DIST_DIR)/local/Central Scrutinizer-local.pakz" "$(DIST_DIR)/local/CentralScrutinizer-local.pakz"
+	@cd "$(STAGING_DIR)" && zip -9 -r "$(CURDIR)/$(DIST_DIR)/local/$(LOCAL_RELEASE_FILENAME)" . -x '.*'
 
 deploy:
 	@echo "Detecting platform..."

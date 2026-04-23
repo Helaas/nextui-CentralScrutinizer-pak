@@ -6,7 +6,18 @@ PAK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 cd "$PAK_DIR"
 
-SDCARD_ROOT=${SDCARD_PATH:-/mnt/SDCARD}
+SDCARD_ROOT=${SDCARD_PATH:-}
+if [ -z "$SDCARD_ROOT" ]; then
+    PREV_ARG=""
+    for ARG in "$@"; do
+        if [ "$PREV_ARG" = "--sdcard" ]; then
+            SDCARD_ROOT="$ARG"
+            break
+        fi
+        PREV_ARG="$ARG"
+    done
+fi
+SDCARD_ROOT=${SDCARD_ROOT:-/mnt/SDCARD}
 export SDCARD_PATH="$SDCARD_ROOT"
 
 if [ -n "${PLATFORM:-}" ] && [ -z "${USERDATA_PATH:-}" ]; then
