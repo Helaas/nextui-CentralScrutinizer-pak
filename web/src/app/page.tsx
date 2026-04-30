@@ -1174,6 +1174,9 @@ export default function Page() {
         onDeleteSelection={(entries) => {
           void handleDeleteSelection(entries);
         }}
+        onDismissNotice={() => {
+          setNotice(null);
+        }}
         onEdit={(entry) => {
           openFileEditor(entry);
         }}
@@ -1321,6 +1324,7 @@ export default function Page() {
       <AppShell
         description={header.description}
         destination={header.destination}
+        fillViewport={viewState.view === "tools" && viewState.tool === "terminal"}
         onDestinationChange={navigateToDestination}
         onDisconnect={handleDisconnect}
         onSearchChange={(value) => {

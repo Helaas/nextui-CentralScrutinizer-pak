@@ -90,4 +90,37 @@ describe("AppShell", () => {
     expect(screen.queryByText("Workspace")).toBeNull();
     expect(screen.getByText("Browser workspace body")).toBeTruthy();
   });
+
+  it("can constrain tool content to the viewport for full-height tools", () => {
+    const { container } = render(
+      <AppShell
+        description="Open a shell."
+        destination="tools"
+        fillViewport
+        onDestinationChange={vi.fn()}
+        onDisconnect={vi.fn()}
+        onSearchChange={vi.fn()}
+        searchPlaceholder="Search"
+        searchValue=""
+        showPageHeader={false}
+        showSearch={false}
+        title="Terminal"
+        transfer={{ active: false, label: "", progress: 0 }}
+      >
+        <div>Terminal body</div>
+      </AppShell>,
+    );
+
+    const main = container.querySelector("main");
+    const body = screen.getByText("Terminal body").parentElement;
+    const primaryNav = screen.getByRole("navigation", { name: "Primary" });
+
+    expect(main?.className).toContain("h-[100dvh]");
+    expect(main?.className).toContain("overflow-hidden");
+    expect(body?.className).toContain("flex-1");
+    expect(body?.className).toContain("overflow-hidden");
+    expect(screen.getByAltText("The Central Scrutinizer").className).toContain("h-14");
+    expect(primaryNav.parentElement?.className).toContain("hidden");
+    expect(primaryNav.parentElement?.className).toContain("md:flex");
+  });
 });

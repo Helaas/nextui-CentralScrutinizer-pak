@@ -359,7 +359,7 @@ function FilesTable({
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
   const dragPathsRef = useRef<string[] | null>(null);
   const gridClass =
-    "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3 md:grid-cols-[auto_minmax(0,1fr)_100px_220px_260px] md:gap-4";
+    "grid grid-cols-[auto_minmax(0,1fr)] gap-3 md:grid-cols-[auto_minmax(0,1fr)_100px_220px_260px] md:gap-4";
   const selectedPathSet = new Set(selectedPaths);
   const selectedEntries = entries.filter((entry) => selectedPathSet.has(entry.path));
 
@@ -552,7 +552,7 @@ function FilesTable({
               <span className="hidden font-mono text-xs tabular-nums text-[var(--muted)] md:block">
                 {formatDate(entry.modified)}
               </span>
-              <div className="flex flex-wrap justify-end gap-1 whitespace-nowrap md:flex-nowrap">
+              <div className="col-span-2 flex flex-wrap justify-end gap-1 whitespace-nowrap md:col-span-1 md:flex-nowrap">
                 {onRename ? (
                   <button
                     aria-label={`Rename ${entry.name}`}

@@ -7,6 +7,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import { createTerminalSession } from "../lib/api";
 import type { SessionResponse } from "../lib/types";
+import { NoticeToast } from "./notice-toast";
 
 function describeTerminalError(error: string): string {
   if (error === "terminal_disabled") {
@@ -221,10 +222,12 @@ export function TerminalToolView({
     setStatus("idle");
   }
 
+  const terminalActive = status === "connecting" || status === "connected";
+
   return (
-    <div className="space-y-5">
+    <div className="flex h-full min-h-0 flex-col gap-4 md:gap-5">
       <button
-        className="inline-flex items-center gap-2 text-sm text-[var(--muted)] transition hover:text-[var(--text)]"
+        className="inline-flex shrink-0 items-center gap-2 self-start text-sm text-[var(--muted)] transition hover:text-[var(--text)]"
         onClick={() => {
           handleDisconnect();
           onBack();
@@ -234,12 +237,14 @@ export function TerminalToolView({
         <span aria-hidden="true">←</span>
         Back
       </button>
-      <div className="space-y-3">
+      <div className="shrink-0 space-y-2">
         <h2 className="text-lg font-semibold">Terminal</h2>
-        <p className="text-sm text-[var(--muted)]">
-          This opens a real shell on the device. Use it only when you understand the commands you are
-          running.
-        </p>
+        {!terminalActive ? (
+          <p className="text-sm text-[var(--muted)]">
+            This opens a real shell on the device. Use it only when you understand the commands you are
+            running.
+          </p>
+        ) : null}
       </div>
       {!enabled ? (
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] px-5 py-5 text-sm text-[var(--muted)]">
@@ -247,13 +252,9 @@ export function TerminalToolView({
         </div>
       ) : (
         <>
-          {notice ? (
-            <div className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)]">
-              {notice}
-            </div>
-          ) : null}
+          {notice ? <NoticeToast message={notice} onDismiss={() => setNotice(null)} /> : null}
           {status === "idle" ? (
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] px-5 py-5">
+            <div className="shrink-0 rounded-2xl border border-[var(--border)] bg-[var(--panel)] px-5 py-5">
               <p className="text-sm text-[var(--muted)]">
                 The session starts in the SD card root and uses the device shell through a PTY-backed websocket.
               </p>
@@ -268,9 +269,9 @@ export function TerminalToolView({
               </button>
             </div>
           ) : null}
-          {(status === "connecting" || status === "connected") ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
+          {terminalActive ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              <div className="flex shrink-0 items-center justify-between gap-3">
                 <p className="text-sm text-[var(--muted)]">
                   {status === "connecting" ? "Connecting terminal..." : "Connected"}
                 </p>
@@ -282,8 +283,8 @@ export function TerminalToolView({
                   Disconnect
                 </button>
               </div>
-              <div className="rounded-2xl border border-[var(--border)] bg-black/40 p-3">
-                <div className="h-[38vh] min-h-[30rem]" ref={containerRef} />
+              <div className="min-h-[18rem] flex-1 rounded-2xl border border-[var(--border)] bg-black/40 p-3">
+                <div className="h-full min-h-[16rem]" ref={containerRef} />
               </div>
             </div>
           ) : null}

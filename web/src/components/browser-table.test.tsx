@@ -238,8 +238,11 @@ describe("BrowserTable", () => {
     const renameButton = screen.getByRole("button", { name: "Rename readme.txt" });
     const actionHeader = screen.getByText("Action").closest("div");
 
+    expect(actionHeader?.className).toContain("grid-cols-[auto_minmax(0,1fr)]");
     expect(actionHeader?.className).toContain("md:grid-cols-[auto_minmax(0,1fr)_100px_220px_260px]");
     expect(renameButton.parentElement?.className).toContain("flex-wrap");
+    expect(renameButton.parentElement?.className).toContain("col-span-2");
+    expect(renameButton.parentElement?.className).toContain("md:col-span-1");
     expect(renameButton.className).not.toContain("opacity-0");
     expect(screen.getByRole("button", { name: "Edit readme.txt" }).className).not.toContain("opacity-0");
     expect(screen.getByRole("button", { name: "Delete readme.txt" }).className).not.toContain("opacity-0");

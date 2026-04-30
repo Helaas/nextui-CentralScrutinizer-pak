@@ -69,12 +69,15 @@ describe("BrowserView", () => {
   });
 
   it("renders the bios browser without the legacy status panel", () => {
+    const onDismissNotice = vi.fn();
+
     render(
       <BrowserView
         notice="Uploaded 1 file."
         onBack={vi.fn()}
         onCreateFolder={vi.fn()}
         onDeleteSelection={vi.fn()}
+        onDismissNotice={onDismissNotice}
         onNavigate={vi.fn()}
         onRefresh={vi.fn()}
         onRename={vi.fn()}
@@ -105,7 +108,11 @@ describe("BrowserView", () => {
       />,
     );
 
+    expect(screen.getByRole("status")).toBeTruthy();
+    expect(screen.getByText("Done")).toBeTruthy();
     expect(screen.getByText("Uploaded 1 file.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notice" }));
+    expect(onDismissNotice).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("navigation", { name: "Library path" })).toBeTruthy();
     expect(screen.getByPlaceholderText("Search in current folder")).toBeTruthy();
     expect(screen.queryByRole("checkbox")).toBeNull();

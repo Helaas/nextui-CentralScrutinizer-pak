@@ -15,6 +15,7 @@ import { BrowserFilesToolbar } from "./browser-files-toolbar";
 import { BrowserWorkspaceCard } from "./browser-workspace-card";
 import { BrowserTable } from "./browser-table";
 import { DropZone } from "./drop-zone";
+import { NoticeToast } from "./notice-toast";
 import { TransferBar } from "./transfer-bar";
 
 const BROWSER_MOVE_IGNORED_DRAG_TYPES = [BROWSER_MOVE_DRAG_TYPE];
@@ -289,6 +290,7 @@ export function BrowserView({
   onBack,
   onCreateFolder,
   onDeleteSelection,
+  onDismissNotice,
   onEdit,
   onMoveSelection,
   onNavigate,
@@ -314,6 +316,7 @@ export function BrowserView({
   onBack: () => void;
   onCreateFolder: () => void;
   onDeleteSelection: (entries: BrowserEntry[]) => void;
+  onDismissNotice?: () => void;
   onEdit?: (entry: BrowserEntry) => void;
   onMoveSelection?: (entries: BrowserEntry[], destinationPath: string) => void;
   onNavigate: (path?: string) => void;
@@ -369,6 +372,15 @@ export function BrowserView({
       setLocalNotice(null);
     }
   }, [notice]);
+
+  function dismissVisibleNotice() {
+    if (localNotice) {
+      setLocalNotice(null);
+      return;
+    }
+
+    onDismissNotice?.();
+  }
 
   async function handleDownloadSelection() {
     if (!csrf || selectedEntries.length === 0 || hasDirectorySelection) {
@@ -536,11 +548,7 @@ export function BrowserView({
         onCancel={transfer.onCancel}
         progress={transfer.progress}
       />
-      {visibleNotice ? (
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)]">
-          {visibleNotice}
-        </div>
-      ) : null}
+      {visibleNotice ? <NoticeToast message={visibleNotice} onDismiss={dismissVisibleNotice} /> : null}
       {isFiles && searchResults ? (
         <section className="rounded-[24px] border border-[var(--border)] bg-[var(--panel)] px-5 py-4">
           <div className="mb-4 flex items-center justify-between gap-3">
