@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
 
+const EMPTY_IGNORED_DRAG_TYPES: readonly string[] = [];
+
 type FileSystemEntryLike = {
   isFile: boolean;
   isDirectory: boolean;
@@ -81,15 +83,27 @@ export async function collectDroppedFiles(
   return Array.from(dataTransfer.files);
 }
 
+function hasIgnoredDragType(dataTransfer: DataTransfer, ignoredDragTypes: readonly string[]): boolean {
+  if (ignoredDragTypes.length === 0) {
+    return false;
+  }
+
+  const types = Array.from(dataTransfer.types ?? []);
+
+  return ignoredDragTypes.some((type) => types.includes(type));
+}
+
 export function DropZone({
   allowDirectories = true,
   children,
   disabled = false,
+  ignoredDragTypes = EMPTY_IGNORED_DRAG_TYPES,
   onDrop,
 }: {
   allowDirectories?: boolean;
   children: ReactNode;
   disabled?: boolean;
+  ignoredDragTypes?: readonly string[];
   onDrop: (files: File[]) => void;
 }) {
   const [dragActive, setDragActive] = useState(false);
@@ -98,6 +112,12 @@ export function DropZone({
 
   const handleDragEnter = useCallback(
     (event: React.DragEvent) => {
+      if (hasIgnoredDragType(event.dataTransfer, ignoredDragTypes)) {
+        dragCounter.current = 0;
+        setDragActive(false);
+        return;
+      }
+
       event.preventDefault();
       if (disabled) return;
       dragCounter.current += 1;
@@ -105,17 +125,21 @@ export function DropZone({
         setDragActive(true);
       }
     },
-    [disabled],
+    [disabled, ignoredDragTypes],
   );
 
   const handleDragOver = useCallback(
     (event: React.DragEvent) => {
+      if (hasIgnoredDragType(event.dataTransfer, ignoredDragTypes)) {
+        return;
+      }
+
       event.preventDefault();
       if (!disabled) {
         event.dataTransfer.dropEffect = "copy";
       }
     },
-    [disabled],
+    [disabled, ignoredDragTypes],
   );
 
   const handleDragLeave = useCallback(
@@ -136,6 +160,10 @@ export function DropZone({
       dragCounter.current = 0;
       setDragActive(false);
 
+      if (hasIgnoredDragType(event.dataTransfer, ignoredDragTypes)) {
+        return;
+      }
+
       if (disabled) return;
 
       setReading(true);
@@ -148,7 +176,7 @@ export function DropZone({
         setReading(false);
       }
     },
-    [allowDirectories, disabled, onDrop],
+    [allowDirectories, disabled, ignoredDragTypes, onDrop],
   );
 
   return (

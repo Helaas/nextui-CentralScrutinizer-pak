@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { BROWSER_MOVE_DRAG_TYPE } from "../lib/drag-types";
 import { collectDroppedFiles, DropZone } from "./drop-zone";
 
 class MockDataTransfer {
@@ -183,6 +184,31 @@ describe("DropZone", () => {
     fireEvent.drop(zone, { dataTransfer: createDataTransfer([]) });
 
     await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onDrop).not.toHaveBeenCalled();
+  });
+
+  it("ignores configured internal drag types", async () => {
+    const onDrop = vi.fn();
+    const dataTransfer = {
+      files: [],
+      items: [],
+      types: [BROWSER_MOVE_DRAG_TYPE],
+    } as unknown as DataTransfer;
+
+    render(
+      <DropZone ignoredDragTypes={[BROWSER_MOVE_DRAG_TYPE]} onDrop={onDrop}>
+        <p>Content</p>
+      </DropZone>,
+    );
+
+    const zone = screen.getByText("Content").closest("[class*='relative']")!;
+
+    fireEvent.dragEnter(zone, { dataTransfer });
+    fireEvent.dragOver(zone, { dataTransfer });
+    fireEvent.drop(zone, { dataTransfer });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByText("Drop files here to upload")).toBeNull();
     expect(onDrop).not.toHaveBeenCalled();
   });
 });

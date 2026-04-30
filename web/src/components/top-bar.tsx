@@ -4,6 +4,7 @@ import { PrimaryNav } from "./primary-nav";
 
 export function TopBar({
   activeDestination,
+  compact = false,
   onDestinationChange,
   onDisconnect,
   onSearchChange,
@@ -13,6 +14,7 @@ export function TopBar({
   transfer,
 }: {
   activeDestination: AppDestination;
+  compact?: boolean;
   onDestinationChange: (destination: AppDestination) => void;
   onDisconnect: () => void;
   onSearchChange: (value: string) => void;
@@ -21,28 +23,37 @@ export function TopBar({
   showSearch: boolean;
   transfer: TransferState;
 }) {
+  const headerClass = compact
+    ? "rounded-[24px] border border-[var(--border)] bg-[var(--panel)] px-4 py-3 shadow-[var(--shadow)] md:rounded-[28px] md:px-5 md:py-4"
+    : "rounded-[28px] border border-[var(--border)] bg-[var(--panel)] px-5 py-4 shadow-[var(--shadow)]";
+  const logoClass = compact ? "h-14 w-auto md:h-20" : "h-20 w-auto";
+  const eyebrowClass = compact
+    ? "hidden text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)] md:block"
+    : "text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)]";
+  const titleClass = compact ? "text-base font-bold leading-tight md:text-lg" : "text-lg font-bold";
+  const secondaryRowClass = compact
+    ? "hidden flex-col gap-3 md:flex lg:flex-row lg:items-center lg:justify-between"
+    : "flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between";
+  const disconnectClass = compact
+    ? "rounded-full border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--muted)] transition hover:text-[var(--text)] md:px-4 md:text-sm"
+    : "rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--muted)] transition hover:text-[var(--text)]";
+
   return (
-    <header className="rounded-[28px] border border-[var(--border)] bg-[var(--panel)] px-5 py-4 shadow-[var(--shadow)]">
+    <header className={headerClass}>
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <img alt="The Central Scrutinizer" className="h-20 w-auto" src="/logo.png" />
+            <img alt="The Central Scrutinizer" className={logoClass} src="/logo.png" />
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
-                Central Scrutinizer
-              </p>
-              <p className="text-lg font-bold">Device Library Workspace</p>
+              <p className={eyebrowClass}>Central Scrutinizer</p>
+              <p className={titleClass}>Device Library Workspace</p>
             </div>
           </div>
-          <button
-            className="rounded-full border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--muted)] transition hover:text-[var(--text)]"
-            onClick={onDisconnect}
-            type="button"
-          >
+          <button className={disconnectClass} onClick={onDisconnect} type="button">
             Disconnect
           </button>
         </div>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className={secondaryRowClass}>
           <PrimaryNav active={activeDestination} onChange={onDestinationChange} />
           <div className="flex items-center gap-3">
             {showSearch ? (

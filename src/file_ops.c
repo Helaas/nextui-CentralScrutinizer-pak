@@ -24,6 +24,55 @@ extern int renameatx_np(int fromfd, const char *from, int tofd, const char *to, 
 
 static atomic_ulong g_write_nonce = ATOMIC_VAR_INIT(0);
 
+static int cs_stats_refer_to_same_entry(const struct stat *left, const struct stat *right) {
+    if (!left || !right) {
+        return 0;
+    }
+
+    return left->st_dev == right->st_dev && left->st_ino == right->st_ino;
+}
+
+static int cs_directory_fds_refer_to_same_entry(int left_fd, int right_fd) {
+    struct stat left_st;
+    struct stat right_st;
+
+    if (left_fd < 0 || right_fd < 0) {
+        return 0;
+    }
+    if (fstat(left_fd, &left_st) != 0 || fstat(right_fd, &right_st) != 0) {
+        return 0;
+    }
+    if (!S_ISDIR(left_st.st_mode) || !S_ISDIR(right_st.st_mode)) {
+        return 0;
+    }
+
+    return cs_stats_refer_to_same_entry(&left_st, &right_st);
+}
+
+static int cs_verify_renamed_entry(int dir_fd, const char *name, const struct stat *source_st) {
+    struct stat final_st;
+
+    if (dir_fd < 0 || !name || !source_st) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (fstatat(dir_fd, name, &final_st, AT_SYMLINK_NOFOLLOW) != 0) {
+        errno = EIO;
+        return -1;
+    }
+    if ((S_ISREG(source_st->st_mode) && !S_ISREG(final_st.st_mode))
+        || (S_ISDIR(source_st->st_mode) && !S_ISDIR(final_st.st_mode))) {
+        errno = EIO;
+        return -1;
+    }
+    if (!cs_stats_refer_to_same_entry(&final_st, source_st)) {
+        errno = EIO;
+        return -1;
+    }
+
+    return 0;
+}
+
 static int cs_component_is_special(const char *start, size_t length) {
     if (!start) {
         return 1;
@@ -226,12 +275,87 @@ static int cs_open_directory_under_root(const char *root, const char *path) {
     return current_fd;
 }
 
+static int cs_case_only_rename_needs_fallback(int from_dir_fd,
+                                              const char *from_name,
+                                              int to_dir_fd,
+                                              const char *to_name,
+                                              const struct stat *source_st) {
+    struct stat target_st;
+
+    if (!from_name || !to_name || !source_st) {
+        return 0;
+    }
+    if (strcmp(from_name, to_name) == 0) {
+        return 0;
+    }
+    if (!cs_directory_fds_refer_to_same_entry(from_dir_fd, to_dir_fd)) {
+        return 0;
+    }
+    if (fstatat(to_dir_fd, to_name, &target_st, AT_SYMLINK_NOFOLLOW) == 0) {
+        return cs_stats_refer_to_same_entry(&target_st, source_st);
+    }
+    if (errno == ENOENT && cs_rename_case_only_force_fallback()) {
+        return 1;
+    }
+
+    return 0;
+}
+
+static int cs_atomic_case_only_rename(int dir_fd,
+                                      const char *from_name,
+                                      const char *to_name,
+                                      const struct stat *source_st) {
+    unsigned long nonce;
+    int attempt;
+
+    if (dir_fd < 0 || !from_name || !to_name || !source_st) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    nonce = atomic_fetch_add_explicit(&g_write_nonce, 1, memory_order_relaxed);
+    for (attempt = 0; attempt < 32; ++attempt) {
+        char temp_name[1024];
+
+        if (cs_write_path(temp_name,
+                          sizeof(temp_name),
+                          ".csrename.%s.%lu.%d",
+                          to_name,
+                          nonce,
+                          attempt)
+            != 0) {
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+        if (strcmp(temp_name, from_name) == 0 || strcmp(temp_name, to_name) == 0) {
+            continue;
+        }
+        if (renameat(dir_fd, from_name, dir_fd, temp_name) != 0) {
+            if (errno == EEXIST || errno == ENOTEMPTY) {
+                continue;
+            }
+            return -1;
+        }
+        if (renameat(dir_fd, temp_name, dir_fd, to_name) != 0) {
+            int saved_errno = errno;
+
+            (void) renameat(dir_fd, temp_name, dir_fd, from_name);
+            errno = saved_errno;
+            return -1;
+        }
+
+        return cs_verify_renamed_entry(dir_fd, to_name, source_st);
+    }
+
+    errno = EEXIST;
+    return -1;
+}
+
 static int cs_atomic_rename_no_replace(int from_dir_fd,
                                        const char *from_name,
                                        int to_dir_fd,
                                        const char *to_name,
                                        const struct stat *source_st) {
-    struct stat final_st;
     int force_fallback;
 
     if (!from_name || !to_name || !source_st) {
@@ -313,32 +437,12 @@ static int cs_atomic_rename_no_replace(int from_dir_fd,
     }
 
 verify_final:
-    if (fstatat(to_dir_fd, to_name, &final_st, AT_SYMLINK_NOFOLLOW) != 0) {
+    if (cs_verify_renamed_entry(to_dir_fd, to_name, source_st) != 0) {
         if (S_ISDIR(source_st->st_mode)) {
             (void) unlinkat(to_dir_fd, to_name, AT_REMOVEDIR);
         } else {
             (void) unlinkat(to_dir_fd, to_name, 0);
         }
-        errno = EIO;
-        return -1;
-    }
-    if ((S_ISREG(source_st->st_mode) && !S_ISREG(final_st.st_mode))
-        || (S_ISDIR(source_st->st_mode) && !S_ISDIR(final_st.st_mode))) {
-        if (S_ISDIR(final_st.st_mode)) {
-            (void) unlinkat(to_dir_fd, to_name, AT_REMOVEDIR);
-        } else {
-            (void) unlinkat(to_dir_fd, to_name, 0);
-        }
-        errno = EIO;
-        return -1;
-    }
-    if (final_st.st_dev != source_st->st_dev || final_st.st_ino != source_st->st_ino) {
-        if (S_ISDIR(final_st.st_mode)) {
-            (void) unlinkat(to_dir_fd, to_name, AT_REMOVEDIR);
-        } else {
-            (void) unlinkat(to_dir_fd, to_name, 0);
-        }
-        errno = EIO;
         return -1;
     }
 
@@ -560,7 +664,11 @@ int cs_safe_rename_under_root_with_flags(const char *root,
     if (to_dir_fd < 0) {
         goto cleanup;
     }
-    if (cs_atomic_rename_no_replace(from_dir_fd, from_name, to_dir_fd, to_name, &source_st) != 0) {
+    if (cs_case_only_rename_needs_fallback(from_dir_fd, from_name, to_dir_fd, to_name, &source_st)) {
+        if (cs_atomic_case_only_rename(from_dir_fd, from_name, to_name, &source_st) != 0) {
+            goto cleanup;
+        }
+    } else if (cs_atomic_rename_no_replace(from_dir_fd, from_name, to_dir_fd, to_name, &source_st) != 0) {
         goto cleanup;
     }
 

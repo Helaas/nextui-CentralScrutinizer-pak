@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { BROWSER_MOVE_DRAG_TYPE } from "../lib/drag-types";
 import { BrowserTable } from "./browser-table";
 
 const mockApi = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ describe("BrowserTable", () => {
     vi.clearAllMocks();
   });
 
-  it("renders files as a flat file-manager table without legacy columns or secondary menus", () => {
+  it("renders files as a flat file-manager table with selection checkboxes and without secondary menus", () => {
     render(
       <BrowserTable
         entries={[
@@ -49,13 +50,46 @@ describe("BrowserTable", () => {
     expect(screen.getByText("Action")).toBeTruthy();
     expect(screen.queryByText("Type")).toBeNull();
     expect(screen.queryByText("Select")).toBeNull();
-    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(3);
+    expect(screen.getByRole("checkbox", { name: "Select all visible items" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "Select DC" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "Select readme.txt" })).toBeTruthy();
     expect(screen.queryByText("Cheats/DC")).toBeNull();
     expect(screen.queryByText("Cheats/readme.txt")).toBeNull();
     expect(screen.getByRole("button", { name: "Open DC" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Download readme.txt" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Download readme.txt" })).toBeNull();
     expect(screen.queryByRole("button", { name: "More actions for readme.txt" })).toBeNull();
+  });
+
+  it("dispatches files selection changes through the row and header checkboxes", () => {
+    const onSelectAll = vi.fn();
+    const onSelectEntry = vi.fn();
+    const entry = {
+      name: "readme.txt",
+      path: "readme.txt",
+      type: "file" as const,
+      size: 12,
+      modified: 1_700_000_000,
+      status: "",
+      thumbnailPath: "",
+    };
+
+    render(
+      <BrowserTable
+        entries={[entry]}
+        onNavigate={vi.fn()}
+        onSelectAll={onSelectAll}
+        onSelectEntry={onSelectEntry}
+        scope="files"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select readme.txt" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all visible items" }));
+
+    expect(onSelectEntry).toHaveBeenCalledWith(entry, true);
+    expect(onSelectAll).toHaveBeenCalledWith(true);
   });
 
   it("renders a parent .. row when onNavigateParent is provided and delegates on click", () => {
@@ -204,11 +238,70 @@ describe("BrowserTable", () => {
     const renameButton = screen.getByRole("button", { name: "Rename readme.txt" });
     const actionHeader = screen.getByText("Action").closest("div");
 
-    expect(actionHeader?.className).toContain("md:grid-cols-[minmax(0,1fr)_100px_220px_260px]");
+    expect(actionHeader?.className).toContain("grid-cols-[auto_minmax(0,1fr)]");
+    expect(actionHeader?.className).toContain("md:grid-cols-[auto_minmax(0,1fr)_100px_220px_260px]");
     expect(renameButton.parentElement?.className).toContain("flex-wrap");
+    expect(renameButton.parentElement?.className).toContain("col-span-2");
+    expect(renameButton.parentElement?.className).toContain("md:col-span-1");
     expect(renameButton.className).not.toContain("opacity-0");
     expect(screen.getByRole("button", { name: "Edit readme.txt" }).className).not.toContain("opacity-0");
     expect(screen.getByRole("button", { name: "Delete readme.txt" }).className).not.toContain("opacity-0");
+  });
+
+  it("moves the dragged file selection onto a folder row", () => {
+    const onMoveEntries = vi.fn();
+    const folderEntry = {
+      name: "Archives",
+      path: "Archives",
+      type: "directory" as const,
+      size: 0,
+      modified: 1_700_000_000,
+      status: "",
+      thumbnailPath: "",
+    };
+    const firstFile = {
+      name: "readme.txt",
+      path: "readme.txt",
+      type: "file" as const,
+      size: 12,
+      modified: 1_700_000_100,
+      status: "",
+      thumbnailPath: "",
+    };
+    const secondFile = {
+      name: "notes.txt",
+      path: "notes.txt",
+      type: "file" as const,
+      size: 18,
+      modified: 1_700_000_200,
+      status: "",
+      thumbnailPath: "",
+    };
+    const dataTransfer = {
+      dropEffect: "",
+      effectAllowed: "",
+      setData: vi.fn(),
+    };
+
+    render(
+      <BrowserTable
+        entries={[folderEntry, firstFile, secondFile]}
+        onMoveEntries={onMoveEntries}
+        onNavigate={vi.fn()}
+        selectedPaths={[firstFile.path, secondFile.path]}
+        scope="files"
+      />,
+    );
+
+    const draggedRow = screen.getByRole("link", { name: "Download readme.txt" }).closest("[draggable]") as HTMLElement;
+    const folderRow = screen.getByRole("button", { name: "Open Archives" }).closest("[draggable]") as HTMLElement;
+
+    fireEvent.dragStart(draggedRow, { dataTransfer });
+    fireEvent.dragOver(folderRow, { dataTransfer });
+    fireEvent.drop(folderRow, { dataTransfer });
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith(BROWSER_MOVE_DRAG_TYPE, "1");
+    expect(onMoveEntries).toHaveBeenCalledWith([firstFile, secondFile], "Archives");
   });
 
   it("disables files row actions while busy", () => {

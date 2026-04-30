@@ -63,17 +63,21 @@ function createDirectoryDropDataTransfer(directoryName: string, files: File[]) {
 describe("BrowserView", () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.clearAllMocks();
     window.history.replaceState(null, "", "/");
   });
 
   it("renders the bios browser without the legacy status panel", () => {
+    const onDismissNotice = vi.fn();
+
     render(
       <BrowserView
         notice="Uploaded 1 file."
         onBack={vi.fn()}
         onCreateFolder={vi.fn()}
         onDeleteSelection={vi.fn()}
+        onDismissNotice={onDismissNotice}
         onNavigate={vi.fn()}
         onRefresh={vi.fn()}
         onRename={vi.fn()}
@@ -104,7 +108,11 @@ describe("BrowserView", () => {
       />,
     );
 
+    expect(screen.getByRole("status")).toBeTruthy();
+    expect(screen.getByText("Done")).toBeTruthy();
     expect(screen.getByText("Uploaded 1 file.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notice" }));
+    expect(onDismissNotice).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("navigation", { name: "Library path" })).toBeTruthy();
     expect(screen.getByPlaceholderText("Search in current folder")).toBeTruthy();
     expect(screen.queryByRole("checkbox")).toBeNull();
@@ -287,14 +295,49 @@ describe("BrowserView", () => {
     expect(screen.getByPlaceholderText("Search in current folder")).toBeTruthy();
   });
 
-  it("does not render checkboxes or a selection bar in files", () => {
+  it("shows files selection controls and bulk actions when entries are selected", async () => {
+    const onDeleteSelection = vi.fn();
+    const onMoveSelection = vi.fn();
+
+    mockApi.getBrowser
+      .mockResolvedValueOnce({
+        scope: "files",
+        title: "Files",
+        rootPath: "SD Card",
+        path: "",
+        breadcrumbs: [],
+        truncated: false,
+        entries: [
+          {
+            name: "Archives",
+            path: "Archives",
+            type: "directory",
+            size: 0,
+            modified: 1_700_000_100,
+            status: "",
+            thumbnailPath: "",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        scope: "files",
+        title: "Files",
+        rootPath: "SD Card",
+        path: "Archives",
+        breadcrumbs: [{ label: "Archives", path: "Archives" }],
+        truncated: false,
+        entries: [],
+      });
+
     render(
       <BrowserView
         busy={false}
+        csrf="csrf-token"
         notice={null}
         onBack={vi.fn()}
         onCreateFolder={vi.fn()}
-        onDeleteSelection={vi.fn()}
+        onDeleteSelection={onDeleteSelection}
+        onMoveSelection={onMoveSelection}
         onNavigate={vi.fn()}
         onRefresh={vi.fn()}
         onRename={vi.fn()}
@@ -326,12 +369,94 @@ describe("BrowserView", () => {
       />,
     );
 
-    expect(screen.queryByRole("checkbox")).toBeNull();
-    expect(screen.queryByText("1 selected")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Delete Selected" })).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Pokemon Emerald.gba" }));
+
+    expect(screen.getByRole("checkbox", { name: "Select all visible items" })).toBeTruthy();
+    expect(screen.getByText("1 item selected")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Download Selected" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Move Selected" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete Selected" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "More actions for Pokemon Emerald.gba" })).toBeNull();
     expect(screen.getByRole("button", { name: "Rename Pokemon Emerald.gba" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Delete Pokemon Emerald.gba" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Move Selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open folder Archives" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Move Here" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Selected" }));
+
+    await waitFor(() => {
+      expect(onMoveSelection).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            name: "Pokemon Emerald.gba",
+            path: "Imports/Pokemon Emerald.gba",
+          }),
+        ],
+        "Archives",
+      );
+    });
+    expect(onDeleteSelection).toHaveBeenCalledWith([
+      expect.objectContaining({
+        name: "Pokemon Emerald.gba",
+        path: "Imports/Pokemon Emerald.gba",
+      }),
+    ]);
+  });
+
+  it("disables bulk download when a selected folder is included", () => {
+    render(
+      <BrowserView
+        busy={false}
+        notice={null}
+        onBack={vi.fn()}
+        onCreateFolder={vi.fn()}
+        onDeleteSelection={vi.fn()}
+        onMoveSelection={vi.fn()}
+        onNavigate={vi.fn()}
+        onRefresh={vi.fn()}
+        onRename={vi.fn()}
+        onReplaceArt={vi.fn()}
+        onSearchChange={vi.fn()}
+        onUploadFiles={vi.fn()}
+        response={{
+          scope: "files",
+          title: "Files",
+          rootPath: "SD Card",
+          path: "Imports",
+          breadcrumbs: [{ label: "Imports", path: "Imports" }],
+          truncated: false,
+          entries: [
+            {
+              name: "Archives",
+              path: "Imports/Archives",
+              type: "directory",
+              size: 0,
+              modified: 1_700_000_000,
+              status: "",
+              thumbnailPath: "",
+            },
+            {
+              name: "Pokemon Emerald.gba",
+              path: "Imports/Pokemon Emerald.gba",
+              type: "file",
+              size: 1024,
+              modified: 1_700_000_100,
+              status: "",
+              thumbnailPath: "",
+            },
+          ],
+        }}
+        scope="files"
+        search=""
+        transfer={{ active: false, label: "", progress: 0 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Archives" }));
+
+    expect(screen.getByRole("button", { name: "Download Selected" })).toHaveProperty("disabled", true);
+    expect(screen.getByText("Bulk download works with file-only selections. Move and delete still work for folders.")).toBeTruthy();
   });
 
   it("renders a parent .. row for files outside the root", () => {

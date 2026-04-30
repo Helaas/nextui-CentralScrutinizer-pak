@@ -107,6 +107,16 @@ async function expectJson<T>(response: Response, errorMessage: string): Promise<
   return response.json() as Promise<T>;
 }
 
+async function readErrorCode(response: Response): Promise<string | undefined> {
+  try {
+    const body = (await response.json()) as { error?: string };
+
+    return typeof body?.error === "string" ? body.error : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function buildDownloadUrl(scope: BrowserScope, path: string, tag?: string, csrf?: string | null): string {
   return `/api/download${toQuery({ scope, tag, path, csrf: csrf ?? undefined })}`;
 }
@@ -388,7 +398,16 @@ export async function renameItem(request: RenameRequest, csrf: string): Promise<
   });
 
   if (!response.ok) {
-    throw new Error("Rename failed");
+    const errorCode = await readErrorCode(response);
+
+    if (response.status === 409) {
+      throw new ApiError("That name is already in use in this folder.", response.status, errorCode ?? "already_exists");
+    }
+    if (response.status === 404) {
+      throw new ApiError("The item you tried to rename no longer exists.", response.status, errorCode ?? "path_not_found");
+    }
+
+    throw new ApiError("Rename failed", response.status, errorCode);
   }
 }
 
