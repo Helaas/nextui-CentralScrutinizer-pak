@@ -11,8 +11,18 @@ static inline int cs_rename_noreplace_force_fallback(void) {
 
     return value != NULL && value[0] != '\0' && strcmp(value, "0") != 0;
 }
+
+static inline int cs_rename_case_only_force_fallback(void) {
+    const char *value = getenv("CS_FORCE_CASE_ONLY_RENAME_FALLBACK");
+
+    return value != NULL && value[0] != '\0' && strcmp(value, "0") != 0;
+}
 #else
 static inline int cs_rename_noreplace_force_fallback(void) {
+    return 0;
+}
+
+static inline int cs_rename_case_only_force_fallback(void) {
     return 0;
 }
 #endif

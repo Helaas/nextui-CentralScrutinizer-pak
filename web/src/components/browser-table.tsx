@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { buildDownloadUrl } from "../lib/api";
+import { BROWSER_MOVE_DRAG_TYPE } from "../lib/drag-types";
 import { isPlaintextFileName } from "../lib/plaintext";
 import type { BrowserEntry, BrowserScope } from "../lib/types";
 
@@ -172,6 +173,43 @@ function RowGlyph({ scope, entry }: { scope: BrowserScope; entry: BrowserEntry }
   );
 }
 
+function SelectionCheckbox({
+  ariaLabel,
+  checked,
+  disabled,
+  indeterminate = false,
+  onChange,
+}: {
+  ariaLabel: string;
+  checked: boolean;
+  disabled: boolean;
+  indeterminate?: boolean;
+  onChange?: (checked: boolean) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.indeterminate = indeterminate;
+    }
+  }, [indeterminate]);
+
+  return (
+    <input
+      ref={inputRef}
+      aria-label={ariaLabel}
+      checked={checked}
+      className="h-4 w-4 rounded border border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
+      disabled={disabled}
+      onChange={(event) => {
+        onChange?.(event.target.checked);
+      }}
+      style={{ accentColor: "var(--accent)" }}
+      type="checkbox"
+    />
+  );
+}
+
 function RowMoreMenu({
   busy,
   canReplaceArt,
@@ -286,34 +324,84 @@ function RowMoreMenu({
 }
 
 function FilesTable({
+  allSelected = false,
   busy,
   csrf,
   entries,
   onDelete,
   onEdit,
+  onMoveEntries,
   onNavigate,
   onNavigateParent,
   onRename,
+  onSelectAll,
+  onSelectEntry,
+  selectedPaths = [],
+  someSelected = false,
   tag,
 }: {
+  allSelected?: boolean;
   busy: boolean;
   csrf?: string | null;
   entries: BrowserEntry[];
   onDelete?: (entry: BrowserEntry) => void;
   onEdit?: (entry: BrowserEntry) => void;
+  onMoveEntries?: (entries: BrowserEntry[], destinationPath: string) => void;
   onNavigate: (path?: string) => void;
   onNavigateParent?: () => void;
   onRename?: (entry: BrowserEntry) => void;
+  onSelectAll?: (checked: boolean) => void;
+  onSelectEntry?: (entry: BrowserEntry, checked: boolean) => void;
+  selectedPaths?: string[];
+  someSelected?: boolean;
   tag?: string;
 }) {
+  const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
+  const dragPathsRef = useRef<string[] | null>(null);
   const gridClass =
-    "grid grid-cols-[minmax(0,1fr),auto] gap-3 md:grid-cols-[minmax(0,1fr)_100px_220px_260px] md:gap-4";
+    "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3 md:grid-cols-[auto_minmax(0,1fr)_100px_220px_260px] md:gap-4";
+  const selectedPathSet = new Set(selectedPaths);
+  const selectedEntries = entries.filter((entry) => selectedPathSet.has(entry.path));
+
+  function clearDragState() {
+    dragPathsRef.current = null;
+    setDropTargetPath(null);
+  }
+
+  function draggedEntriesFor(entry: BrowserEntry): BrowserEntry[] {
+    if (selectedPathSet.has(entry.path) && selectedEntries.length > 0) {
+      return selectedEntries;
+    }
+
+    return [entry];
+  }
+
+  function canDropOn(targetPath: string): boolean {
+    const draggedPaths = dragPathsRef.current;
+
+    if (!draggedPaths || draggedPaths.length === 0) {
+      return false;
+    }
+
+    return draggedPaths.every(
+      (draggedPath) => draggedPath !== targetPath && !targetPath.startsWith(`${draggedPath}/`),
+    );
+  }
 
   return (
     <div className="overflow-hidden rounded-[24px] border border-[var(--border)] bg-[var(--panel)]">
       <div
         className={`hidden border-b border-[var(--line)] bg-white/[0.02] px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--muted)] md:grid ${gridClass}`}
       >
+        <span className="flex items-center justify-center">
+          <SelectionCheckbox
+            ariaLabel="Select all visible items"
+            checked={allSelected}
+            disabled={busy || entries.length === 0}
+            indeterminate={someSelected}
+            onChange={onSelectAll}
+          />
+        </span>
         <span className="flex items-center gap-1">
           Name <span aria-hidden="true">▲</span>
         </span>
@@ -324,6 +412,7 @@ function FilesTable({
 
       {onNavigateParent ? (
         <div className={`items-center border-t border-[var(--line)] px-4 py-3 text-sm ${gridClass}`}>
+          <span aria-hidden="true" className="block h-4 w-4" />
           <button
             aria-label="Go to parent folder"
             className="flex items-center gap-3 text-left italic text-[var(--muted)] transition hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
@@ -355,12 +444,75 @@ function FilesTable({
       ) : (
         entries.map((entry) => {
           const isDir = entry.type === "directory";
+          const isSelected = selectedPathSet.has(entry.path);
+          const isDropTarget = dropTargetPath === entry.path;
 
           return (
             <div
               key={entry.path}
-              className={`group items-center border-t border-[var(--line)] px-4 py-3 text-sm transition hover:bg-white/[0.03] ${gridClass}`}
+              className={`group items-center border-t border-[var(--line)] px-4 py-3 text-sm transition ${isDropTarget ? "bg-[var(--accent-soft)]/30 ring-1 ring-[var(--accent)]/40" : "hover:bg-white/[0.03]"} ${gridClass}`}
+              draggable={Boolean(onMoveEntries) && !busy}
+              onDragEnd={clearDragState}
+              onDragLeave={() => {
+                if (isDropTarget) {
+                  setDropTargetPath(null);
+                }
+              }}
+              onDragOver={
+                isDir && onMoveEntries
+                  ? (event) => {
+                      if (!canDropOn(entry.path)) {
+                        return;
+                      }
+
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      if (!isDropTarget) {
+                        setDropTargetPath(entry.path);
+                      }
+                    }
+                  : undefined
+              }
+              onDragStart={
+                onMoveEntries
+                  ? (event) => {
+                      const draggedEntries = draggedEntriesFor(entry);
+
+                      dragPathsRef.current = draggedEntries.map((candidate) => candidate.path);
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData(BROWSER_MOVE_DRAG_TYPE, "1");
+                      event.dataTransfer.setData("text/plain", dragPathsRef.current.join("\n"));
+                    }
+                  : undefined
+              }
+              onDrop={
+                isDir && onMoveEntries
+                  ? (event) => {
+                      const draggedPaths = dragPathsRef.current ?? [];
+                      const draggedEntries = entries.filter((candidate) => draggedPaths.includes(candidate.path));
+
+                      if (!canDropOn(entry.path) || draggedEntries.length === 0) {
+                        clearDragState();
+                        return;
+                      }
+
+                      event.preventDefault();
+                      clearDragState();
+                      onMoveEntries(draggedEntries, entry.path);
+                    }
+                  : undefined
+              }
             >
+              <div className="flex items-center justify-center">
+                <SelectionCheckbox
+                  ariaLabel={`Select ${entry.name}`}
+                  checked={isSelected}
+                  disabled={busy}
+                  onChange={(checked) => {
+                    onSelectEntry?.(entry, checked);
+                  }}
+                />
+              </div>
               <div className="min-w-0">
                 {isDir ? (
                   <button
@@ -559,41 +711,59 @@ function LibraryTable({
 }
 
 export function BrowserTable({
+  allSelected = false,
   busy = false,
   csrf,
   entries,
   onDelete,
   onEdit,
+  onMoveEntries,
   onNavigate,
   onNavigateParent,
   onRename,
   onReplaceArt,
+  onSelectAll,
+  onSelectEntry,
+  selectedPaths,
+  someSelected = false,
   scope,
   tag,
 }: {
+  allSelected?: boolean;
   busy?: boolean;
   csrf?: string | null;
   entries: BrowserEntry[];
   onDelete?: (entry: BrowserEntry) => void;
   onEdit?: (entry: BrowserEntry) => void;
+  onMoveEntries?: (entries: BrowserEntry[], destinationPath: string) => void;
   onNavigate: (path?: string) => void;
   onNavigateParent?: () => void;
   onRename?: (entry: BrowserEntry) => void;
   onReplaceArt?: (entry: BrowserEntry) => void;
+  onSelectAll?: (checked: boolean) => void;
+  onSelectEntry?: (entry: BrowserEntry, checked: boolean) => void;
+  selectedPaths?: string[];
+  someSelected?: boolean;
   scope: BrowserScope;
   tag?: string;
 }) {
   if (scope === "files") {
     return (
       <FilesTable
+        allSelected={allSelected}
         busy={busy}
         csrf={csrf}
         entries={entries}
         onDelete={onDelete}
         onEdit={onEdit}
+        onMoveEntries={onMoveEntries}
         onNavigate={onNavigate}
         onNavigateParent={onNavigateParent}
         onRename={onRename}
+        onSelectAll={onSelectAll}
+        onSelectEntry={onSelectEntry}
+        selectedPaths={selectedPaths}
+        someSelected={someSelected}
         tag={tag}
       />
     );

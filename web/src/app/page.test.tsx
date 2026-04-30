@@ -320,7 +320,7 @@ function fileBrowserResponse(entries: Array<{
   modified: number;
   status: string;
   thumbnailPath: string;
-}> = []) {
+}> = [], overrides: Partial<{ path: string; breadcrumbs: Array<{ label: string; path: string }>; truncated: boolean }> = {}) {
   return {
     scope: "files" as const,
     title: "Files",
@@ -329,6 +329,7 @@ function fileBrowserResponse(entries: Array<{
     breadcrumbs: [],
     truncated: false,
     entries,
+    ...overrides,
   };
 }
 
@@ -826,6 +827,101 @@ describe("Page", () => {
     expect(mockApi.renameItem).toHaveBeenCalledTimes(1);
     expect(mockApi.renameItem).toHaveBeenCalledWith(
       expect.objectContaining({ scope: "files", tag: undefined, from: "Saves", to: "Archives" }),
+      "csrf-token",
+    );
+  });
+
+  it("warns before renaming a files entry to a name already visible in the folder", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Archives");
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser.mockResolvedValueOnce(
+      fileBrowserResponse([
+        {
+          name: "Saves",
+          path: "Saves",
+          type: "directory",
+          size: 0,
+          modified: 1_700_000_000,
+          status: "",
+          thumbnailPath: "",
+        },
+        {
+          name: "Archives",
+          path: "Archives",
+          type: "directory",
+          size: 0,
+          modified: 1_700_000_100,
+          status: "",
+          thumbnailPath: "",
+        },
+      ]),
+    );
+
+    render(<Page />);
+
+    await openFileBrowserTool();
+    fireEvent.click(await screen.findByRole("button", { name: "Rename Saves" }));
+
+    await screen.findByText("Can't rename Saves to Archives because that name is already in use.");
+    expect(mockApi.renameItem).not.toHaveBeenCalled();
+  });
+
+  it("moves selected files from the tool workspace through the bulk move action", async () => {
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser
+      .mockResolvedValueOnce(
+        fileBrowserResponse([
+          {
+            name: "Pokemon Emerald.gba",
+            path: "Pokemon Emerald.gba",
+            type: "file",
+            size: 1024,
+            modified: 1_700_000_000,
+            status: "",
+            thumbnailPath: "",
+          },
+          {
+            name: "Archives",
+            path: "Archives",
+            type: "directory",
+            size: 0,
+            modified: 1_700_000_100,
+            status: "",
+            thumbnailPath: "",
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fileBrowserResponse(
+          [],
+          {
+            path: "Archives",
+            breadcrumbs: [{ label: "Archives", path: "Archives" }],
+          },
+        ),
+      )
+      .mockResolvedValueOnce(fileBrowserResponse());
+    mockApi.renameItem.mockResolvedValue(undefined);
+
+    render(<Page />);
+
+    await openFileBrowserTool();
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select Pokemon Emerald.gba" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move Selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open folder Archives" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Move Here" }));
+
+    await screen.findByText("Moved 1 item to Archives.");
+    expect(mockApi.renameItem).toHaveBeenCalledTimes(1);
+    expect(mockApi.renameItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "files",
+        tag: undefined,
+        from: "Pokemon Emerald.gba",
+        to: "Archives/Pokemon Emerald.gba",
+      }),
       "csrf-token",
     );
   });

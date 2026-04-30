@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +14,46 @@ static void write_file(const char *path, const char *content) {
     assert(file != NULL);
     assert(fwrite(content, 1, strlen(content), file) == strlen(content));
     assert(fclose(file) == 0);
+}
+
+static int file_content_equals(const char *path, const char *content) {
+    char buffer[128];
+    FILE *file;
+    size_t expected_len;
+    size_t read_len;
+
+    assert(path != NULL);
+    assert(content != NULL);
+
+    file = fopen(path, "rb");
+    assert(file != NULL);
+    read_len = fread(buffer, 1, sizeof(buffer) - 1, file);
+    assert(fclose(file) == 0);
+    buffer[read_len] = '\0';
+    expected_len = strlen(content);
+
+    return read_len == expected_len && strcmp(buffer, content) == 0;
+}
+
+static int directory_contains_name(const char *path, const char *name) {
+    DIR *dir;
+    struct dirent *entry;
+    int found = 0;
+
+    assert(path != NULL);
+    assert(name != NULL);
+
+    dir = opendir(path);
+    assert(dir != NULL);
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, name) == 0) {
+            found = 1;
+            break;
+        }
+    }
+    assert(closedir(dir) == 0);
+
+    return found;
 }
 
 int main(void) {
@@ -38,6 +79,13 @@ int main(void) {
     char folder_source_path[1024];
     char folder_renamed_path[1024];
     char folder_child_path[1024];
+    char case_source_path[1024];
+    char case_renamed_path[1024];
+    char case_folder_source_path[1024];
+    char case_folder_renamed_path[1024];
+    char case_folder_child_path[1024];
+    char forced_case_source_path[1024];
+    char forced_case_target_path[1024];
 
     assert(cs_validate_relative_path("Game Boy Advance (GBA)/Golden Sun.gba") == 0);
     assert(cs_validate_relative_path("Game Boy Advance (GBA)/.media/Golden Sun.png") == 0);
@@ -75,6 +123,16 @@ int main(void) {
     assert(snprintf(folder_source_path, sizeof(folder_source_path), "%s/folder-source", managed_dir) > 0);
     assert(snprintf(folder_renamed_path, sizeof(folder_renamed_path), "%s/folder-renamed", managed_dir) > 0);
     assert(snprintf(folder_child_path, sizeof(folder_child_path), "%s/inside.txt", folder_source_path) > 0);
+    assert(snprintf(case_source_path, sizeof(case_source_path), "%s/case-only.txt", managed_dir) > 0);
+    assert(snprintf(case_renamed_path, sizeof(case_renamed_path), "%s/Case-Only.txt", managed_dir) > 0);
+    assert(snprintf(case_folder_source_path, sizeof(case_folder_source_path), "%s/case-folder", managed_dir) > 0);
+    assert(snprintf(case_folder_renamed_path, sizeof(case_folder_renamed_path), "%s/Case-Folder", managed_dir) > 0);
+    assert(snprintf(case_folder_child_path, sizeof(case_folder_child_path), "%s/inside.txt", case_folder_source_path)
+           > 0);
+    assert(snprintf(forced_case_source_path, sizeof(forced_case_source_path), "%s/forced-source.txt", managed_dir)
+           > 0);
+    assert(snprintf(forced_case_target_path, sizeof(forced_case_target_path), "%s/forced-target.txt", managed_dir)
+           > 0);
 
     write_file(source_path, "payload");
     assert(cs_safe_rename_under_root(root_path,
@@ -97,6 +155,31 @@ int main(void) {
     assert(access(fallback_renamed_path, F_OK) == 0);
     assert(cs_safe_delete_under_root(root_path, "Game Boy Advance (GBA)/fallback-renamed.txt") == 0);
 
+    write_file(case_source_path, "case-only");
+    assert(setenv("CS_FORCE_CASE_ONLY_RENAME_FALLBACK", "1", 1) == 0);
+    assert(cs_safe_rename_under_root(root_path,
+                                     "Game Boy Advance (GBA)/case-only.txt",
+                                     "Game Boy Advance (GBA)/Case-Only.txt")
+           == 0);
+    assert(unsetenv("CS_FORCE_CASE_ONLY_RENAME_FALLBACK") == 0);
+    assert(directory_contains_name(managed_dir, "case-only.txt") == 0);
+    assert(directory_contains_name(managed_dir, "Case-Only.txt") == 1);
+    assert(access(case_renamed_path, F_OK) == 0);
+    assert(cs_safe_delete_under_root(root_path, "Game Boy Advance (GBA)/Case-Only.txt") == 0);
+
+    write_file(forced_case_source_path, "source-kept");
+    write_file(forced_case_target_path, "target-kept");
+    assert(setenv("CS_FORCE_CASE_ONLY_RENAME_FALLBACK", "1", 1) == 0);
+    assert(cs_safe_rename_under_root(root_path,
+                                     "Game Boy Advance (GBA)/forced-source.txt",
+                                     "Game Boy Advance (GBA)/forced-target.txt")
+           != 0);
+    assert(unsetenv("CS_FORCE_CASE_ONLY_RENAME_FALLBACK") == 0);
+    assert(access(forced_case_source_path, F_OK) == 0);
+    assert(file_content_equals(forced_case_target_path, "target-kept") == 1);
+    assert(cs_safe_delete_under_root(root_path, "Game Boy Advance (GBA)/forced-source.txt") == 0);
+    assert(cs_safe_delete_under_root(root_path, "Game Boy Advance (GBA)/forced-target.txt") == 0);
+
     assert(mkdir(folder_source_path, 0775) == 0);
     write_file(folder_child_path, "folder");
     assert(setenv("CS_FORCE_RENAME_NOREPLACE_FALLBACK", "1", 1) == 0);
@@ -108,6 +191,19 @@ int main(void) {
     assert(access(folder_source_path, F_OK) != 0);
     assert(access(folder_renamed_path, F_OK) == 0);
     assert(cs_safe_delete_under_root(root_path, "Game Boy Advance (GBA)/folder-renamed") == 0);
+
+    assert(mkdir(case_folder_source_path, 0775) == 0);
+    write_file(case_folder_child_path, "case-folder");
+    assert(setenv("CS_FORCE_CASE_ONLY_RENAME_FALLBACK", "1", 1) == 0);
+    assert(cs_safe_rename_under_root(root_path,
+                                     "Game Boy Advance (GBA)/case-folder",
+                                     "Game Boy Advance (GBA)/Case-Folder")
+           == 0);
+    assert(unsetenv("CS_FORCE_CASE_ONLY_RENAME_FALLBACK") == 0);
+    assert(directory_contains_name(managed_dir, "case-folder") == 0);
+    assert(directory_contains_name(managed_dir, "Case-Folder") == 1);
+    assert(access(case_folder_renamed_path, F_OK) == 0);
+    assert(cs_safe_delete_under_root(root_path, "Game Boy Advance (GBA)/Case-Folder") == 0);
 
     assert(mkdir(nested_dir, 0775) == 0);
     assert(mkdir(deeper_dir, 0775) == 0);

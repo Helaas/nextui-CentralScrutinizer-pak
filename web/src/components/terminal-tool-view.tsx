@@ -283,7 +283,7 @@ export function TerminalToolView({
                 </button>
               </div>
               <div className="rounded-2xl border border-[var(--border)] bg-black/40 p-3">
-                <div className="min-h-[26rem]" ref={containerRef} />
+                <div className="h-[38vh] min-h-[30rem]" ref={containerRef} />
               </div>
             </div>
           ) : null}

@@ -88,6 +88,16 @@ function buildRenamedPath(existingPath: string, nextName: string): string {
   return lastSlash >= 0 ? `${existingPath.slice(0, lastSlash)}/${nextName}` : nextName;
 }
 
+function normalizeRelativeDirectory(path: string): string {
+  return path.trim().replace(/^\/+|\/+$/g, "");
+}
+
+function buildMovedPath(entry: BrowserEntry, destinationPath: string): string {
+  const normalized = normalizeRelativeDirectory(destinationPath);
+
+  return normalized ? `${normalized}/${entry.name}` : entry.name;
+}
+
 async function pickSingleFile(accept?: string): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
@@ -812,23 +822,88 @@ export default function Page() {
     const scopeState = currentScopeState();
     const nextName = window.prompt("Rename item", entry.name);
     const csrf = session.csrf;
+    const trimmedName = nextName?.trim();
+    const nameInUse = browserResponse?.entries.some(
+      (candidate) =>
+        candidate.path !== entry.path && candidate.name.toLocaleLowerCase() === (trimmedName ?? "").toLocaleLowerCase(),
+    );
 
-    if (!scopeState || !csrf || !nextName || nextName === entry.name) {
+    if (!scopeState || !csrf || !trimmedName || trimmedName === entry.name) {
+      return;
+    }
+    if (nameInUse) {
+      setNotice(`Can't rename ${entry.name} to ${trimmedName} because that name is already in use.`);
       return;
     }
 
     await withBusy(async () => {
-      await renameItem(
-        {
-          scope: scopeState.scope,
-          tag: scopeState.tag,
-          from: entry.path,
-          to: buildRenamedPath(entry.path, nextName.trim()),
-        },
-        csrf,
+      try {
+        await renameItem(
+          {
+            scope: scopeState.scope,
+            tag: scopeState.tag,
+            from: entry.path,
+            to: buildRenamedPath(entry.path, trimmedName),
+          },
+          csrf,
+        );
+        await refreshCurrentData();
+        setNotice(`Renamed ${entry.name} to ${trimmedName}.`);
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "Rename failed.");
+      }
+    });
+  };
+
+  const handleMoveSelection = async (entries: BrowserEntry[], destinationPath: string) => {
+    const scopeState = currentScopeState();
+    const csrf = session.csrf;
+    const normalizedDestination = normalizeRelativeDirectory(destinationPath);
+    const moves = entries
+      .map((entry) => ({ entry, to: buildMovedPath(entry, normalizedDestination) }))
+      .filter(
+        ({ entry, to }) =>
+          to !== entry.path &&
+          !(entry.type === "directory" && (to === entry.path || to.startsWith(`${entry.path}/`))),
       );
+
+    if (!scopeState || !csrf || entries.length === 0) {
+      return;
+    }
+    if (moves.length === 0) {
+      setNotice("Nothing to move.");
+      return;
+    }
+
+    await withBusy(async () => {
+      const results = await Promise.allSettled(
+        moves.map(async ({ entry, to }) =>
+          renameItem(
+            {
+              scope: scopeState.scope,
+              tag: scopeState.tag,
+              from: entry.path,
+              to,
+            },
+            csrf,
+          ),
+        ),
+      );
+      const successCount = results.filter((result) => result.status === "fulfilled").length;
+      const failureCount = moves.length - successCount;
+      const destinationLabel = normalizedDestination || "SD Card root";
+
       await refreshCurrentData();
-      setNotice(`Renamed ${entry.name} to ${nextName.trim()}.`);
+      if (failureCount === 0) {
+        setNotice(`Moved ${formatItemCount(successCount)} to ${destinationLabel}.`);
+        return;
+      }
+      if (successCount === 0) {
+        setNotice(`Failed to move ${formatItemCount(moves.length)}.`);
+        return;
+      }
+
+      setNotice(`Moved ${successCount} of ${moves.length} items to ${destinationLabel}. ${failureCount} failed.`);
     });
   };
 
@@ -1101,6 +1176,9 @@ export default function Page() {
         }}
         onEdit={(entry) => {
           openFileEditor(entry);
+        }}
+        onMoveSelection={(entries, destinationPath) => {
+          void handleMoveSelection(entries, destinationPath);
         }}
         onNavigate={(path) => {
           if (isFileBrowserTool(viewState)) {
