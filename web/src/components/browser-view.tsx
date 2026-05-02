@@ -341,6 +341,7 @@ export function BrowserView({
   const allowDroppedDirectories = canUploadFolder && (isFiles || scope === "roms");
   const fullPath = getFullPath(scope, response);
   const itemCount = response.entries.length;
+  const itemCountLabel = response.truncated ? `${formatItemCount(itemCount)} shown` : formatItemCount(itemCount);
   const entries = filterEntries(response.entries, search);
   const selectedEntries = entries.filter((entry) => selectedPaths.includes(entry.path));
   const allSelected = entries.length > 0 && entries.every((entry) => selectedPaths.includes(entry.path));
@@ -467,7 +468,7 @@ export function BrowserView({
           breadcrumbs={response.breadcrumbs}
           busy={busy}
           canUploadFolder={canUploadFolder}
-          itemCount={itemCount}
+          itemCountLabel={itemCountLabel}
           onBack={onBack}
           onCreateFolder={onCreateFolder}
           onNavigate={onNavigate}
@@ -548,6 +549,12 @@ export function BrowserView({
         onCancel={transfer.onCancel}
         progress={transfer.progress}
       />
+      {response.truncated ? (
+        <section className="rounded-lg border border-amber-300/25 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
+          This folder has more entries than shown. Items beyond the current listing cap are hidden until the folder is
+          split or pagination is added.
+        </section>
+      ) : null}
       {visibleNotice ? <NoticeToast message={visibleNotice} onDismiss={dismissVisibleNotice} /> : null}
       {isFiles && searchResults ? (
         <section className="rounded-[24px] border border-[var(--border)] bg-[var(--panel)] px-5 py-4">
@@ -649,7 +656,7 @@ export function BrowserView({
       {isFiles ? (
         <footer className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)]">
           <div className="flex flex-col gap-1">
-            <p>{formatItemCount(itemCount)}</p>
+            <p>{itemCountLabel}</p>
             <p className="break-all">{fullPath}</p>
           </div>
         </footer>

@@ -6,7 +6,7 @@
 #include "cs_paths.h"
 #include "cs_platforms.h"
 
-#define CS_BROWSER_MAX_ENTRIES 256
+#define CS_BROWSER_MAX_ENTRIES 1024
 #define CS_BROWSER_MAX_BREADCRUMBS 32
 
 typedef enum cs_browser_scope {

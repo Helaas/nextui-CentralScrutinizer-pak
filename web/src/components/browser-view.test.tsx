@@ -176,6 +176,48 @@ describe("BrowserView", () => {
     expect(screen.getByText("2 items")).toBeTruthy();
   });
 
+  it("surfaces capped browser listings", () => {
+    render(
+      <BrowserView
+        busy={false}
+        notice={null}
+        onBack={vi.fn()}
+        onCreateFolder={vi.fn()}
+        onDeleteSelection={vi.fn()}
+        onNavigate={vi.fn()}
+        onRefresh={vi.fn()}
+        onRename={vi.fn()}
+        onReplaceArt={vi.fn()}
+        onSearchChange={vi.fn()}
+        onUploadFiles={vi.fn()}
+        response={{
+          scope: "roms",
+          title: "ROMs - Game Boy Advance",
+          rootPath: "Roms/Game Boy Advance (GBA)",
+          path: "",
+          breadcrumbs: [],
+          truncated: true,
+          entries: [
+            {
+              name: "Pokemon Emerald.gba",
+              path: "Pokemon Emerald.gba",
+              type: "rom",
+              size: 1024,
+              modified: 1_700_000_000,
+              status: "",
+              thumbnailPath: "",
+            },
+          ],
+        }}
+        scope="roms"
+        transfer={{ active: false, label: "", progress: 0 }}
+      />,
+    );
+
+    expect(screen.getByText("1 item shown")).toBeTruthy();
+    expect(screen.getByText(/This folder has more entries than shown/i)).toBeTruthy();
+  });
+
   it("does not duplicate the root path text in the library header at the scope root", () => {
     render(
       <BrowserView

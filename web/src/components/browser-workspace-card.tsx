@@ -4,7 +4,7 @@ export function BrowserWorkspaceCard({
   breadcrumbs,
   busy,
   canUploadFolder = false,
-  itemCount,
+  itemCountLabel,
   onBack,
   onCreateFolder,
   onNavigate,
@@ -20,7 +20,7 @@ export function BrowserWorkspaceCard({
   breadcrumbs: Breadcrumb[];
   busy: boolean;
   canUploadFolder?: boolean;
-  itemCount: number;
+  itemCountLabel: string;
   onBack: () => void;
   onCreateFolder: () => void;
   onNavigate: (path?: string) => void;
@@ -53,7 +53,7 @@ export function BrowserWorkspaceCard({
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <h2 className="text-3xl font-bold tracking-tight">{title}</h2>
                 <span className="rounded-full border border-[var(--border)] bg-[var(--bg)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                  {itemCount} item{itemCount === 1 ? "" : "s"}
+                  {itemCountLabel}
                 </span>
               </div>
               <nav
