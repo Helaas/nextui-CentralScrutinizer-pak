@@ -7,6 +7,7 @@ const mockApi = vi.hoisted(() => ({
   buildDownloadUrl: vi.fn((scope: string, path: string) => `/api/download?scope=${scope}&path=${encodeURIComponent(path)}`),
   deleteItem: vi.fn(),
   getBrowser: vi.fn(),
+  getBrowserAll: vi.fn(),
 }));
 
 vi.mock("../lib/api", () => mockApi);
@@ -18,7 +19,7 @@ describe("ScreenshotsToolView", () => {
   });
 
   it("uses consistent button treatments for the bulk and per-card actions", async () => {
-    mockApi.getBrowser.mockResolvedValue({
+    mockApi.getBrowserAll.mockResolvedValue({
       scope: "files",
       title: "Screenshots",
       rootPath: "Screenshots",
@@ -63,7 +64,7 @@ describe("ScreenshotsToolView", () => {
   it("renders a back button for the selected tools view", () => {
     const onBack = vi.fn();
 
-    mockApi.getBrowser.mockResolvedValue({
+    mockApi.getBrowserAll.mockResolvedValue({
       scope: "files",
       title: "Screenshots",
       rootPath: "Screenshots",

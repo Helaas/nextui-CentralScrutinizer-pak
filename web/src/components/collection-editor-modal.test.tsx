@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mockApi = vi.hoisted(() => ({
   getBrowser: vi.fn(),
+  getBrowserAll: vi.fn(),
   getPlatforms: vi.fn(),
   writeTextFile: vi.fn(),
 }));
@@ -59,7 +60,7 @@ describe("CollectionEditorModal", () => {
         },
       ],
     });
-    mockApi.getBrowser.mockImplementation((_scope: string, _csrf: string, _tag: string, path?: string) => {
+    mockApi.getBrowserAll.mockImplementation((_scope: string, _csrf: string, _tag: string, path?: string) => {
       if (!path) {
         return Promise.resolve({
           scope: "roms",
@@ -131,7 +132,7 @@ describe("CollectionEditorModal", () => {
     expect(await screen.findByText("Root Game.gba")).toBeTruthy();
     expect(await screen.findByText("Nested Adventure.gba")).toBeTruthy();
     await waitFor(() => {
-      expect(mockApi.getBrowser).toHaveBeenCalledWith("roms", "csrf-token", "GBA", "RPG");
+      expect(mockApi.getBrowserAll).toHaveBeenCalledWith("roms", "csrf-token", "GBA", "RPG");
     });
   });
 });

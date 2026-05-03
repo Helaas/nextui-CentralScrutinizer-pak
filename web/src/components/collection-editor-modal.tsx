@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { getBrowser, getPlatforms, writeTextFile } from "../lib/api";
+import { getBrowserAll, getPlatforms, writeTextFile } from "../lib/api";
 
 type AvailableRom = {
   label: string;
@@ -26,7 +26,7 @@ async function collectPlatformRoms(platform: {
 
   while (pendingPaths.length > 0) {
     const nextPath = pendingPaths.pop();
-    const browser = await getBrowser("roms", csrf, platform.tag, nextPath);
+    const browser = await getBrowserAll("roms", csrf, platform.tag, nextPath);
 
     for (const entry of browser.entries) {
       if (entry.type === "directory") {

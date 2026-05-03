@@ -8,6 +8,7 @@ const mockApi = vi.hoisted(() => ({
   createFolder: vi.fn(),
   deleteItem: vi.fn(),
   getBrowser: vi.fn(),
+  getBrowserAll: vi.fn(),
   getPlatforms: vi.fn(),
   getSession: vi.fn(),
   pairBrowser: vi.fn(),
@@ -353,7 +354,7 @@ describe("BrowserView", () => {
     const onDeleteSelection = vi.fn();
     const onMoveSelection = vi.fn();
 
-    mockApi.getBrowser
+    mockApi.getBrowserAll
       .mockResolvedValueOnce({
         scope: "files",
         title: "Files",

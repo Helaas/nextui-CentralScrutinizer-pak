@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import JSZip from "jszip";
 
-import { buildDownloadUrl, deleteItem, getBrowser } from "../lib/api";
+import { buildDownloadUrl, deleteItem, getBrowserAll } from "../lib/api";
 import type { BrowserEntry } from "../lib/types";
 
 function isImageEntry(entry: BrowserEntry): boolean {
@@ -51,7 +51,7 @@ export function ScreenshotsToolView({
           throw new Error("Missing session csrf token.");
         }
 
-        const response = await getBrowser("files", csrf, undefined, "Screenshots");
+        const response = await getBrowserAll("files", csrf, undefined, "Screenshots");
         const nextEntries = response.entries.filter(isImageEntry).sort((left, right) => right.modified - left.modified);
 
         if (active) {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import JSZip from "jszip";
 
-import { buildDownloadUrl, getBrowser } from "../lib/api";
+import { buildDownloadUrl, getBrowserAll } from "../lib/api";
 import { BROWSER_MOVE_DRAG_TYPE } from "../lib/drag-types";
 import type {
   BrowserEntry,
@@ -121,7 +121,7 @@ function BrowserMoveModal({
 
     setLoading(true);
     setLoadError(null);
-    void getBrowser("files", csrf, undefined, currentPath)
+    void getBrowserAll("files", csrf, undefined, currentPath)
       .then((nextResponse) => {
         if (!active) {
           return;

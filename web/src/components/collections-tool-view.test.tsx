@@ -7,6 +7,7 @@ const mockApi = vi.hoisted(() => ({
   buildDownloadUrl: vi.fn(),
   deleteItem: vi.fn(),
   getBrowser: vi.fn(),
+  getBrowserAll: vi.fn(),
   readTextFile: vi.fn(),
   uploadFiles: vi.fn(),
 }));
@@ -22,7 +23,7 @@ describe("CollectionsToolView", () => {
   it("renders a back button for the selected tools view", async () => {
     const onBack = vi.fn();
 
-    mockApi.getBrowser.mockResolvedValue({
+    mockApi.getBrowserAll.mockResolvedValue({
       scope: "files",
       title: "Collections",
       rootPath: "Collections",

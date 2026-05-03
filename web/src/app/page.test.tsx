@@ -26,6 +26,7 @@ const mockApi = vi.hoisted(() => ({
   createFolder: vi.fn(),
   deleteItem: vi.fn(),
   getBrowser: vi.fn(),
+  getBrowserAll: vi.fn(),
   getMacDotfiles: vi.fn(),
   getPlatforms: vi.fn(),
   getSaveStates: vi.fn(),
@@ -903,16 +904,16 @@ describe("Page", () => {
           },
         ]),
       )
-      .mockResolvedValueOnce(
-        fileBrowserResponse(
-          [],
-          {
-            path: "Archives",
-            breadcrumbs: [{ label: "Archives", path: "Archives" }],
-          },
-        ),
-      )
       .mockResolvedValueOnce(fileBrowserResponse());
+    mockApi.getBrowserAll.mockResolvedValueOnce(
+      fileBrowserResponse(
+        [],
+        {
+          path: "Archives",
+          breadcrumbs: [{ label: "Archives", path: "Archives" }],
+        },
+      ),
+    );
     mockApi.renameItem.mockResolvedValue(undefined);
 
     render(<Page />);

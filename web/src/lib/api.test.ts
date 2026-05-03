@@ -7,6 +7,7 @@ import {
   beginUploadFilesBatched,
   buildDownloadUrl,
   getBrowser,
+  getBrowserAll,
   getMacDotfiles,
   getPlatforms,
   getLogs,
@@ -237,6 +238,61 @@ describe("authenticated GET helpers", () => {
     await expect(readTextFile("files", "Collections/Favorites.txt", "csrf-token")).resolves.toBe("payload");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/download?scope=files&path=Collections%2FFavorites.txt&csrf=csrf-token",
+      expect.objectContaining({ headers: { "X-CS-CSRF": "csrf-token" } }),
+    );
+  });
+
+  it("fetches every browser page for all-entry consumers", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          scope: "files",
+          title: "Screenshots",
+          rootPath: "Screenshots",
+          path: "Screenshots",
+          breadcrumbs: [],
+          totalCount: 3,
+          offset: 0,
+          truncated: false,
+          entries: [
+            { name: "shot-1.png", path: "Screenshots/shot-1.png", type: "file", size: 1, modified: 1, status: "", thumbnailPath: "" },
+            { name: "shot-2.png", path: "Screenshots/shot-2.png", type: "file", size: 1, modified: 2, status: "", thumbnailPath: "" },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          scope: "files",
+          title: "Screenshots",
+          rootPath: "Screenshots",
+          path: "Screenshots",
+          breadcrumbs: [],
+          totalCount: 3,
+          offset: 2,
+          truncated: false,
+          entries: [
+            { name: "shot-3.png", path: "Screenshots/shot-3.png", type: "file", size: 1, modified: 3, status: "", thumbnailPath: "" },
+          ],
+        }),
+      });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await getBrowserAll("files", "csrf-token", undefined, "Screenshots");
+
+    expect(response.entries.map((entry) => entry.name)).toEqual(["shot-1.png", "shot-2.png", "shot-3.png"]);
+    expect(response.totalCount).toBe(3);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/browser?scope=files&path=Screenshots",
+      expect.objectContaining({ headers: { "X-CS-CSRF": "csrf-token" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/browser?scope=files&path=Screenshots&offset=2",
       expect.objectContaining({ headers: { "X-CS-CSRF": "csrf-token" } }),
     );
   });
