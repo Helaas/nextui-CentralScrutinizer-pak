@@ -20,18 +20,6 @@ import { TransferBar } from "./transfer-bar";
 
 const BROWSER_MOVE_IGNORED_DRAG_TYPES = [BROWSER_MOVE_DRAG_TYPE];
 
-function filterEntries(entries: BrowserEntry[], search: string): BrowserEntry[] {
-  const query = search.trim().toLowerCase();
-
-  if (!query) {
-    return entries;
-  }
-
-  return entries.filter(
-    (entry) => entry.name.toLowerCase().includes(query) || entry.path.toLowerCase().includes(query),
-  );
-}
-
 function getDisplayRoot(scope: BrowserScope, response: BrowserResponse): string {
   return scope === "files" ? "SD Card" : response.rootPath;
 }
@@ -282,7 +270,10 @@ export function BrowserView({
   busy = false,
   canUploadFolder = false,
   csrf,
+  hasMore = false,
+  isLoadingMore = false,
   notice,
+  onLoadMore,
   response,
   scope,
   search = "",
@@ -308,7 +299,10 @@ export function BrowserView({
   busy?: boolean;
   canUploadFolder?: boolean;
   csrf?: string | null;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
   notice?: string | null;
+  onLoadMore?: () => void;
   response: BrowserResponse;
   scope: BrowserScope;
   search?: string;
@@ -340,9 +334,11 @@ export function BrowserView({
   const isFiles = scope === "files";
   const allowDroppedDirectories = canUploadFolder && (isFiles || scope === "roms");
   const fullPath = getFullPath(scope, response);
-  const itemCount = response.entries.length;
-  const itemCountLabel = response.truncated ? `${formatItemCount(itemCount)} shown` : formatItemCount(itemCount);
-  const entries = filterEntries(response.entries, search);
+  const responseTotalCount = Number.isFinite(response.totalCount) ? response.totalCount : 0;
+  const totalCount = Math.max(responseTotalCount, response.entries.length);
+  const itemCountLabel = formatItemCount(totalCount);
+  const entries = response.entries;
+  const remaining = Math.max(totalCount - entries.length, 0);
   const selectedEntries = entries.filter((entry) => selectedPaths.includes(entry.path));
   const allSelected = entries.length > 0 && entries.every((entry) => selectedPaths.includes(entry.path));
   const partiallySelected = selectedEntries.length > 0 && !allSelected;
@@ -360,7 +356,7 @@ export function BrowserView({
         ? current
         : next;
     });
-  }, [response.entries, search]);
+  }, [entries]);
 
   useEffect(() => {
     if (searchResults) {
@@ -468,7 +464,7 @@ export function BrowserView({
           breadcrumbs={response.breadcrumbs}
           busy={busy}
           canUploadFolder={canUploadFolder}
-          itemCountLabel={itemCountLabel}
+          itemCount={totalCount}
           onBack={onBack}
           onCreateFolder={onCreateFolder}
           onNavigate={onNavigate}
@@ -551,8 +547,8 @@ export function BrowserView({
       />
       {response.truncated ? (
         <section className="rounded-lg border border-amber-300/25 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
-          This folder has more entries than shown. Items beyond the current listing cap are hidden until the folder is
-          split or pagination is added.
+          This folder contains more entries than the browser will list at once. Only the first {totalCount.toLocaleString()}{" "}
+          entries are reachable here — split the folder into subfolders to see the rest.
         </section>
       ) : null}
       {visibleNotice ? <NoticeToast message={visibleNotice} onDismiss={dismissVisibleNotice} /> : null}
@@ -634,6 +630,18 @@ export function BrowserView({
           tag={tag}
         />
       )}
+      {!searchResults && hasMore && onLoadMore ? (
+        <div className="flex justify-center">
+          <button
+            className="rounded-md border border-[var(--border)] bg-[var(--panel-alt)] px-5 py-2 text-sm font-medium text-[var(--text)] transition hover:border-[var(--accent)]/50 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isLoadingMore}
+            onClick={onLoadMore}
+            type="button"
+          >
+            {isLoadingMore ? "Loading..." : `Load more (${remaining.toLocaleString()} remaining)`}
+          </button>
+        </div>
+      ) : null}
       {isFiles ? (
         <div className="flex flex-wrap gap-2">
           {entries

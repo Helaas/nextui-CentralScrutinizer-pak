@@ -4,7 +4,7 @@ export function BrowserWorkspaceCard({
   breadcrumbs,
   busy,
   canUploadFolder = false,
-  itemCountLabel,
+  itemCount,
   onBack,
   onCreateFolder,
   onNavigate,
@@ -20,7 +20,7 @@ export function BrowserWorkspaceCard({
   breadcrumbs: Breadcrumb[];
   busy: boolean;
   canUploadFolder?: boolean;
-  itemCountLabel: string;
+  itemCount: number;
   onBack: () => void;
   onCreateFolder: () => void;
   onNavigate: (path?: string) => void;
@@ -34,6 +34,7 @@ export function BrowserWorkspaceCard({
   title: string;
 }) {
   const showFolderOps = scope === "roms";
+  const itemCountLabel = `${itemCount.toLocaleString()} item${itemCount === 1 ? "" : "s"}`;
 
   return (
     <section className="rounded-[24px] border border-[var(--border)] bg-[var(--panel)] px-5 py-5">

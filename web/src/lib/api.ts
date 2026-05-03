@@ -178,9 +178,18 @@ export async function getPlatforms(csrf: string): Promise<PlatformsResponse> {
   return expectJson<PlatformsResponse>(response, "Platforms lookup failed");
 }
 
-export async function getBrowser(scope: BrowserScope, csrf: string, tag?: string, path?: string): Promise<BrowserResponse> {
-  const response = await fetch(`/api/browser${toQuery({ scope, tag, path })}`, {
+export async function getBrowser(
+  scope: BrowserScope,
+  csrf: string,
+  tag?: string,
+  path?: string,
+  options?: { offset?: number; query?: string; signal?: AbortSignal },
+): Promise<BrowserResponse> {
+  const offset = options?.offset && options.offset > 0 ? String(options.offset) : undefined;
+  const q = options?.query?.trim() ? options.query.trim() : undefined;
+  const response = await fetch(`/api/browser${toQuery({ scope, tag, path, offset, q })}`, {
     headers: csrfHeaders(csrf),
+    signal: options?.signal,
   });
 
   return expectJson<BrowserResponse>(response, "Browser lookup failed");

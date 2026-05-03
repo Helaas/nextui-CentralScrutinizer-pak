@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "../components/app-shell";
 import { BrowserView } from "../components/browser-view";
@@ -21,7 +21,6 @@ import {
   beginUploadFilesBatched,
   createFolder,
   deleteItem,
-  getBrowser,
   getPlatforms,
   getSession,
   pairBrowser,
@@ -34,6 +33,7 @@ import {
   writeTextFile,
 } from "../lib/api";
 import { getBrowserId } from "../lib/browser-id";
+import { useBrowserPagination } from "../lib/use-browser-pagination";
 import {
   createPlatformDisplayNames,
   filterPlatformGroups,
@@ -53,7 +53,6 @@ import {
 import { PLAINTEXT_MAX_BYTES } from "../lib/plaintext";
 import type {
   BrowserEntry,
-  BrowserResponse,
   BrowserScope,
   FileSearchResult,
   LibraryEmuFilter,
@@ -196,7 +195,6 @@ export default function Page() {
     typeof window === "undefined" ? "installed" : readLibraryEmuFilter(window.location.search),
   );
   const [platformGroups, setPlatformGroups] = useState<PlatformGroup[]>([]);
-  const [browserResponse, setBrowserResponse] = useState<BrowserResponse | null>(null);
   const [fileSearchResults, setFileSearchResults] = useState<FileSearchResult[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pairError, setPairError] = useState<string | null>(null);
@@ -255,37 +253,39 @@ export default function Page() {
     return nextSession;
   }
 
-  async function refreshBrowser(
-    currentView = viewState,
-    currentCsrf = session?.csrf,
-    currentGroups = platformGroups,
-  ) {
-    if (!currentCsrf) {
-      setBrowserResponse(null);
-      return;
+  const browserContext = useMemo<{ scope: BrowserScope; tag?: string; path?: string } | null>(() => {
+    if (!session?.csrf) {
+      return null;
     }
+    if (viewState.view === "browser") {
+      const platform = findPlatform(platformGroups, viewState.tag);
 
-    if (currentView.view === "browser") {
-      const platform = findPlatform(currentGroups, currentView.tag);
-
-      if (!platform || !platformSupportsBrowserScope(platform, currentView.scope)) {
-        setBrowserResponse(null);
-        return;
+      if (!platform || !platformSupportsBrowserScope(platform, viewState.scope)) {
+        return null;
       }
-      setBrowserResponse(await getBrowser(currentView.scope, currentCsrf, currentView.tag, currentView.path));
-      return;
+      return { scope: viewState.scope, tag: viewState.tag, path: viewState.path };
     }
-    if (isFileBrowserTool(currentView)) {
-      setBrowserResponse(await getBrowser("files", currentCsrf, undefined, currentView.path));
-      return;
+    if (isFileBrowserTool(viewState)) {
+      return { scope: "files", path: viewState.path };
     }
+    return null;
+  }, [session?.csrf, viewState, platformGroups]);
 
-    setBrowserResponse(null);
-  }
+  const browserSearchKey: ShellSearchKey = isFileBrowserTool(viewState) ? "file-browser" : "browser";
+  const browserSearchValue = searchByContext[browserSearchKey];
 
-  async function refreshCurrentData(currentView = viewState, currentCsrf = session?.csrf) {
-    const groups = await loadPlatforms(currentCsrf);
-    await refreshBrowser(currentView, currentCsrf, groups);
+  const browser = useBrowserPagination({
+    scope: browserContext?.scope ?? null,
+    tag: browserContext?.tag,
+    path: browserContext?.path,
+    search: browserSearchValue,
+    csrf: session?.csrf,
+    enabled: browserContext !== null,
+  });
+
+  async function refreshCurrentData(currentCsrf = session?.csrf) {
+    await loadPlatforms(currentCsrf);
+    await browser.refresh();
   }
 
   function clearTransfer() {
@@ -343,7 +343,7 @@ export default function Page() {
             setRetryUnavailableSession(false);
             setSession(pairedSession);
             navigate({ view: "dashboard", destination: "library" }, true);
-            await refreshCurrentData({ view: "dashboard", destination: "library" }, pairedSession.csrf);
+            await refreshCurrentData(pairedSession.csrf);
             return;
           } catch (error) {
             if (!active) {
@@ -387,11 +387,11 @@ export default function Page() {
 
         if (viewState.view === "pair") {
           navigate({ view: "dashboard", destination: "library" }, true);
-          await refreshCurrentData({ view: "dashboard", destination: "library" }, nextSession.csrf);
+          await refreshCurrentData(nextSession.csrf);
           return;
         }
 
-        await refreshCurrentData(viewState, nextSession.csrf);
+        await refreshCurrentData(nextSession.csrf);
       } catch {
         if (active) {
           setConnectionLost(false);
@@ -406,14 +406,6 @@ export default function Page() {
       active = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!session?.paired || connectionLost) {
-      return;
-    }
-
-    void refreshBrowser();
-  }, [connectionLost, session?.paired, viewState]);
 
   useEffect(() => {
     if (viewState.view !== "browser" && viewState.view !== "states") {
@@ -511,13 +503,13 @@ export default function Page() {
           setConnectionLost(false);
           setRetryUnavailableSession(false);
           navigate({ view: "dashboard", destination: "library" }, true);
-          await refreshCurrentData({ view: "dashboard", destination: "library" }, nextSession.csrf);
+          await refreshCurrentData(nextSession.csrf);
           return;
         }
         if (connectionLost || retryUnavailableSession) {
           setConnectionLost(false);
           setRetryUnavailableSession(false);
-          await refreshCurrentData(viewState, nextSession.csrf);
+          await refreshCurrentData(nextSession.csrf);
         }
         schedule(5000);
       } catch {
@@ -574,7 +566,7 @@ export default function Page() {
             setRetryUnavailableSession(false);
             setSession(pairedSession);
             navigate({ view: "dashboard", destination: "library" }, true);
-            await refreshCurrentData({ view: "dashboard", destination: "library" }, pairedSession.csrf);
+            await refreshCurrentData(pairedSession.csrf);
           } catch (error) {
             if (error instanceof ApiError && error.code === "pairing_unavailable") {
               setSession((current) => ({
@@ -823,7 +815,7 @@ export default function Page() {
     const nextName = window.prompt("Rename item", entry.name);
     const csrf = session.csrf;
     const trimmedName = nextName?.trim();
-    const nameInUse = browserResponse?.entries.some(
+    const nameInUse = browser.entries.some(
       (candidate) =>
         candidate.path !== entry.path && candidate.name.toLocaleLowerCase() === (trimmedName ?? "").toLocaleLowerCase(),
     );
@@ -1034,7 +1026,7 @@ export default function Page() {
         searchPlaceholder: "Search in current folder",
         showPageHeader: false,
         showSearch: false,
-        title: browserResponse?.title ?? "Browser",
+        title: browser.metadata?.title ?? "Browser",
       };
     }
     if (isFileBrowserTool(viewState)) {
@@ -1155,11 +1147,14 @@ export default function Page() {
         }}
         platform={activePlatform}
       />
-    ) : (showManagedBrowserView || isFileBrowserTool(viewState)) && browserResponse ? (
+    ) : (showManagedBrowserView || isFileBrowserTool(viewState)) && browser.metadata ? (
       <BrowserView
         busy={isBusy}
         canUploadFolder={canUploadFolder}
+        hasMore={browser.hasMore}
+        isLoadingMore={browser.isLoadingMore}
         notice={notice}
+        onLoadMore={browser.loadMore}
         onBack={() => {
           if (isFileBrowserTool(viewState)) {
             navigate({ view: "tools", destination: "tools" });
@@ -1235,7 +1230,7 @@ export default function Page() {
           void handleUploadFiles(files);
         }}
         csrf={session.csrf}
-        response={browserResponse}
+        response={{ ...browser.metadata, entries: browser.entries }}
         searchResults={isFileBrowserTool(viewState) ? fileSearchResults : null}
         scope={isFileBrowserTool(viewState) ? "files" : viewState.scope}
         search={shellSearchValue}

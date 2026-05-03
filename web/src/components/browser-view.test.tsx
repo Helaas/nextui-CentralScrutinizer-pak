@@ -90,6 +90,8 @@ describe("BrowserView", () => {
           rootPath: "Bios/PS",
           path: "",
           breadcrumbs: [],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -123,7 +125,7 @@ describe("BrowserView", () => {
     expect(screen.queryByText("BIOS Status")).toBeNull();
   });
 
-  it("filters library browser entries using the local search value", () => {
+  it("renders the server-filtered library browser entries without local filtering", () => {
     render(
       <BrowserView
         busy={false}
@@ -143,6 +145,8 @@ describe("BrowserView", () => {
           rootPath: "Roms/Game Boy Advance (GBA)",
           path: "",
           breadcrumbs: [],
+          totalCount: 2,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -172,7 +176,7 @@ describe("BrowserView", () => {
     );
 
     expect(screen.getByRole("link", { name: "Download Metroid Fusion.gba" })).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Download Pokemon Emerald.gba" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Download Pokemon Emerald.gba" })).toBeTruthy();
     expect(screen.getByText("2 items")).toBeTruthy();
   });
 
@@ -196,6 +200,8 @@ describe("BrowserView", () => {
           rootPath: "Roms/Game Boy Advance (GBA)",
           path: "",
           breadcrumbs: [],
+          totalCount: 4096,
+          offset: 0,
           truncated: true,
           entries: [
             {
@@ -214,8 +220,8 @@ describe("BrowserView", () => {
       />,
     );
 
-    expect(screen.getByText("1 item shown")).toBeTruthy();
-    expect(screen.getByText(/This folder has more entries than shown/i)).toBeTruthy();
+    expect(screen.getByText("4,096 items")).toBeTruthy();
+    expect(screen.getByText(/Only the first 4,096 entries are reachable here/i)).toBeTruthy();
   });
 
   it("does not duplicate the root path text in the library header at the scope root", () => {
@@ -238,6 +244,8 @@ describe("BrowserView", () => {
           rootPath: "fixtures/mock_sdcard/Roms/Game Boy Advance (GBA)",
           path: "",
           breadcrumbs: [],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [],
         }}
@@ -270,6 +278,8 @@ describe("BrowserView", () => {
           rootPath: "fixtures/mock_sdcard/Roms/Game Boy Advance (GBA)",
           path: ".media",
           breadcrumbs: [{ label: ".media", path: ".media" }],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [],
         }}
@@ -305,6 +315,8 @@ describe("BrowserView", () => {
           rootPath: "SD Card",
           path: "Imports",
           breadcrumbs: [{ label: "Imports", path: "Imports" }],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -348,6 +360,8 @@ describe("BrowserView", () => {
         rootPath: "SD Card",
         path: "",
         breadcrumbs: [],
+        totalCount: 0,
+        offset: 0,
         truncated: false,
         entries: [
           {
@@ -367,6 +381,8 @@ describe("BrowserView", () => {
         rootPath: "SD Card",
         path: "Archives",
         breadcrumbs: [{ label: "Archives", path: "Archives" }],
+        totalCount: 0,
+        offset: 0,
         truncated: false,
         entries: [],
       });
@@ -392,6 +408,8 @@ describe("BrowserView", () => {
           rootPath: "SD Card",
           path: "Imports",
           breadcrumbs: [{ label: "Imports", path: "Imports" }],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -467,6 +485,8 @@ describe("BrowserView", () => {
           rootPath: "SD Card",
           path: "Imports",
           breadcrumbs: [{ label: "Imports", path: "Imports" }],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -526,6 +546,8 @@ describe("BrowserView", () => {
             { label: "Cheats", path: "Cheats" },
             { label: "DC", path: "Cheats/DC" },
           ],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [],
         }}
@@ -565,6 +587,8 @@ describe("BrowserView", () => {
             { label: "Imports", path: "Imports" },
             { label: "Very", path: "Imports/Very" },
           ],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [],
         }}
@@ -599,6 +623,8 @@ describe("BrowserView", () => {
         rootPath: "SD Card",
         path: "Imports",
         breadcrumbs: [{ label: "Imports", path: "Imports" }],
+        totalCount: 0,
+        offset: 0,
         truncated: false,
         entries: [],
       },
@@ -636,6 +662,8 @@ describe("BrowserView", () => {
         rootPath: "SD Card",
         path: "Imports",
         breadcrumbs: [{ label: "Imports", path: "Imports" }],
+        totalCount: 0,
+        offset: 0,
         truncated: false,
         entries: [],
       },
@@ -690,6 +718,8 @@ describe("BrowserView", () => {
           rootPath: "Roms/Game Boy Advance (GBA)",
           path: "Favorites",
           breadcrumbs: [{ label: "Favorites", path: "Favorites" }],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -750,6 +780,8 @@ describe("BrowserView", () => {
           rootPath: "Saves/GBA",
           path: "",
           breadcrumbs: [],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -804,6 +836,8 @@ describe("BrowserView", () => {
           rootPath: "Saves/GBA",
           path: "",
           breadcrumbs: [],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -853,6 +887,8 @@ describe("BrowserView", () => {
           rootPath: "Roms/Game Boy Advance (GBA)",
           path: "",
           breadcrumbs: [],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {

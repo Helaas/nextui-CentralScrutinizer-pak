@@ -28,6 +28,8 @@ describe("CollectionsToolView", () => {
       rootPath: "Collections",
       path: "Collections",
       breadcrumbs: [],
+      totalCount: 0,
+      offset: 0,
       truncated: false,
       entries: [
         {

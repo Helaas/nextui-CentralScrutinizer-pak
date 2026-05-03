@@ -82,6 +82,11 @@ curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=bios&tag=PS' | grep -Fq '"name":"scph1001.bin"'
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=files' | grep -Fq '"name":".userdata"'
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=files' | grep -Fq '"name":"Roms"'
+curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=roms&tag=GBA&offset=0' | grep -Fq '"offset":0'
+
+INVALID_OFFSET="$(curl -s -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=roms&tag=GBA&offset=-1' -w '\n%{http_code}')"
+echo "$INVALID_OFFSET" | head -n 1 | grep -Fq '"error":"invalid_offset"'
+echo "$INVALID_OFFSET" | tail -n 1 | grep -q '^400$'
 
 INVALID_SCOPE="$(curl -s -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=bogus' -w '\n%{http_code}')"
 echo "$INVALID_SCOPE" | head -n 1 | grep -Fq '"error":"invalid_scope"'

@@ -6,8 +6,10 @@
 #include "cs_paths.h"
 #include "cs_platforms.h"
 
-#define CS_BROWSER_MAX_ENTRIES 1024
+#define CS_BROWSER_PAGE_SIZE 100
+#define CS_BROWSER_SCAN_CAP 4096
 #define CS_BROWSER_MAX_BREADCRUMBS 32
+#define CS_BROWSER_QUERY_MAX 256
 
 typedef enum cs_browser_scope {
     CS_SCOPE_INVALID = -1,
@@ -41,8 +43,10 @@ typedef struct cs_browser_result {
     char path[CS_PATH_MAX];
     cs_browser_breadcrumb breadcrumbs[CS_BROWSER_MAX_BREADCRUMBS];
     size_t breadcrumb_count;
-    cs_browser_entry entries[CS_BROWSER_MAX_ENTRIES];
+    cs_browser_entry entries[CS_BROWSER_PAGE_SIZE];
     size_t count;
+    size_t total_count;
+    size_t offset;
     int truncated;
 } cs_browser_result;
 
@@ -61,6 +65,8 @@ int cs_browser_list(const cs_paths *paths,
                     cs_browser_scope scope,
                     const cs_platform_info *platform,
                     const char *relative_path,
+                    size_t offset,
+                    const char *query,
                     cs_browser_result *result);
 
 #endif

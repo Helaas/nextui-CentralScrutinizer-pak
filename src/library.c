@@ -3,6 +3,7 @@
 
 #include "cs_file_ops.h"
 
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -11,6 +12,47 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+typedef struct cs_browser_sort_entry {
+    char name[256];
+    int is_dir;
+    unsigned long long size;
+    long long modified;
+} cs_browser_sort_entry;
+
+static int cs_browser_name_matches_query(const char *name, const char *query) {
+    size_t name_len;
+    size_t query_len;
+    size_t i;
+
+    if (!query || query[0] == '\0') {
+        return 1;
+    }
+    if (!name) {
+        return 0;
+    }
+    name_len = strlen(name);
+    query_len = strlen(query);
+    if (query_len > name_len) {
+        return 0;
+    }
+    for (i = 0; i + query_len <= name_len; ++i) {
+        size_t j;
+
+        for (j = 0; j < query_len; ++j) {
+            unsigned char nc = (unsigned char) name[i + j];
+            unsigned char qc = (unsigned char) query[j];
+
+            if (tolower(nc) != tolower(qc)) {
+                break;
+            }
+        }
+        if (j == query_len) {
+            return 1;
+        }
+    }
+    return 0;
+}
 
 static int cs_is_regular_file_not_symlink(const char *path) {
     struct stat st;
@@ -285,17 +327,34 @@ static int cs_browser_write_thumbnail(const char *root,
     return 0;
 }
 
-static int cs_browser_entry_compare(const void *left, const void *right) {
-    const cs_browser_entry *a = (const cs_browser_entry *) left;
-    const cs_browser_entry *b = (const cs_browser_entry *) right;
-    int a_dir = strcmp(a->type, "directory") == 0;
-    int b_dir = strcmp(b->type, "directory") == 0;
+static int cs_browser_sort_compare(const void *left, const void *right) {
+    const cs_browser_sort_entry *a = (const cs_browser_sort_entry *) left;
+    const cs_browser_sort_entry *b = (const cs_browser_sort_entry *) right;
 
-    if (a_dir != b_dir) {
-        return a_dir ? -1 : 1;
+    if (a->is_dir != b->is_dir) {
+        return a->is_dir ? -1 : 1;
     }
-
     return strcmp(a->name, b->name);
+}
+
+static const char *cs_browser_entry_type_for_scope(cs_browser_scope scope, int is_dir, const char *entry_relative) {
+    if (is_dir) {
+        return "directory";
+    }
+    switch (scope) {
+        case CS_SCOPE_ROMS:
+            return cs_browser_path_is_art(entry_relative) ? "art" : "rom";
+        case CS_SCOPE_SAVES:
+            return "save";
+        case CS_SCOPE_BIOS:
+            return "bios";
+        case CS_SCOPE_OVERLAYS:
+            return "overlay";
+        case CS_SCOPE_CHEATS:
+            return "cheat";
+        default:
+            return "file";
+    }
 }
 
 static int cs_browser_guard_root_for_scope(const cs_paths *paths,
@@ -453,6 +512,8 @@ int cs_browser_list(const cs_paths *paths,
                     cs_browser_scope scope,
                     const cs_platform_info *platform,
                     const char *relative_path,
+                    size_t offset,
+                    const char *query,
                     cs_browser_result *result) {
     char root[CS_PATH_MAX];
     char target_path[CS_PATH_MAX];
@@ -462,6 +523,11 @@ int cs_browser_list(const cs_paths *paths,
     int dir_fd = -1;
     DIR *dir;
     struct dirent *entry;
+    cs_browser_sort_entry *sort_buf = NULL;
+    size_t sort_count = 0;
+    int scan_truncated = 0;
+    size_t out_count = 0;
+    size_t i;
 
     if (!paths || !result || scope == CS_SCOPE_INVALID) {
         return -1;
@@ -477,6 +543,7 @@ int cs_browser_list(const cs_paths *paths,
     }
 
     memset(result, 0, sizeof(*result));
+    result->offset = offset;
     if (CS_SAFE_SNPRINTF(result->scope, sizeof(result->scope), "%s", cs_browser_scope_name(scope)) != 0
         || CS_SAFE_SNPRINTF(result->root_path, sizeof(result->root_path), "%s", root) != 0
         || CS_SAFE_SNPRINTF(result->path, sizeof(result->path), "%s", relative_path ? relative_path : "") != 0) {
@@ -525,11 +592,19 @@ int cs_browser_list(const cs_paths *paths,
         root_fd = -1;
     }
 
+    sort_buf = (cs_browser_sort_entry *) calloc(CS_BROWSER_SCAN_CAP, sizeof(*sort_buf));
+    if (!sort_buf) {
+        (void) closedir(dir);
+        if (root_fd >= 0) {
+            close(root_fd);
+        }
+        return -1;
+    }
+
     while ((entry = readdir(dir)) != NULL) {
         char entry_absolute[CS_PATH_MAX];
-        char entry_relative[CS_PATH_MAX];
         struct stat st;
-        cs_browser_entry *browser_entry;
+        cs_browser_sort_entry *sort_entry;
 
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
@@ -540,20 +615,9 @@ int cs_browser_list(const cs_paths *paths,
         if (!cs_browser_should_include_entry(scope, platform, entry->d_name, entry_absolute)) {
             continue;
         }
-
-        if (relative_path && relative_path[0] != '\0') {
-            if (CS_SAFE_SNPRINTF(entry_relative,
-                                 sizeof(entry_relative),
-                                 "%s/%s",
-                                 relative_path,
-                                 entry->d_name)
-                != 0) {
-                continue;
-            }
-        } else if (CS_SAFE_SNPRINTF(entry_relative, sizeof(entry_relative), "%s", entry->d_name) != 0) {
+        if (!cs_browser_name_matches_query(entry->d_name, query)) {
             continue;
         }
-
         if (fstatat(dirfd(dir), entry->d_name, &st, AT_SYMLINK_NOFOLLOW) != 0) {
             continue;
         }
@@ -561,97 +625,71 @@ int cs_browser_list(const cs_paths *paths,
             continue;
         }
 
-        if (result->count >= CS_BROWSER_MAX_ENTRIES) {
-            result->truncated = 1;
+        if (sort_count >= CS_BROWSER_SCAN_CAP) {
+            scan_truncated = 1;
             continue;
         }
 
-        browser_entry = &result->entries[result->count];
-        memset(browser_entry, 0, sizeof(*browser_entry));
-        if (CS_SAFE_SNPRINTF(browser_entry->name, sizeof(browser_entry->name), "%s", entry->d_name) != 0
-            || CS_SAFE_SNPRINTF(browser_entry->path, sizeof(browser_entry->path), "%s", entry_relative) != 0) {
-            (void) closedir(dir);
-            if (root_fd >= 0) {
-                close(root_fd);
-            }
-            return -1;
+        sort_entry = &sort_buf[sort_count];
+        if (CS_SAFE_SNPRINTF(sort_entry->name, sizeof(sort_entry->name), "%s", entry->d_name) != 0) {
+            continue;
         }
-        browser_entry->size = S_ISREG(st.st_mode) ? (unsigned long long) st.st_size : 0;
-        browser_entry->modified = (long long) st.st_mtime;
-
-        if (S_ISDIR(st.st_mode)) {
-            if (CS_SAFE_SNPRINTF(browser_entry->type, sizeof(browser_entry->type), "%s", "directory") != 0) {
-                (void) closedir(dir);
-                if (root_fd >= 0) {
-                    close(root_fd);
-                }
-                return -1;
-            }
-        } else if (scope == CS_SCOPE_ROMS) {
-            if (CS_SAFE_SNPRINTF(browser_entry->type,
-                                 sizeof(browser_entry->type),
-                                 "%s",
-                                 cs_browser_path_is_art(entry_relative) ? "art" : "rom")
-                != 0) {
-                (void) closedir(dir);
-                if (root_fd >= 0) {
-                    close(root_fd);
-                }
-                return -1;
-            }
-            (void) cs_browser_write_thumbnail(root,
-                                              entry_relative,
-                                              browser_entry->thumbnail_path,
-                                              sizeof(browser_entry->thumbnail_path));
-        } else if (scope == CS_SCOPE_SAVES) {
-            if (CS_SAFE_SNPRINTF(browser_entry->type, sizeof(browser_entry->type), "%s", "save") != 0) {
-                (void) closedir(dir);
-                if (root_fd >= 0) {
-                    close(root_fd);
-                }
-                return -1;
-            }
-        } else if (scope == CS_SCOPE_BIOS) {
-            if (CS_SAFE_SNPRINTF(browser_entry->type, sizeof(browser_entry->type), "%s", "bios") != 0) {
-                (void) closedir(dir);
-                if (root_fd >= 0) {
-                    close(root_fd);
-                }
-                return -1;
-            }
-        } else if (scope == CS_SCOPE_OVERLAYS) {
-            if (CS_SAFE_SNPRINTF(browser_entry->type, sizeof(browser_entry->type), "%s", "overlay") != 0) {
-                (void) closedir(dir);
-                if (root_fd >= 0) {
-                    close(root_fd);
-                }
-                return -1;
-            }
-        } else if (scope == CS_SCOPE_CHEATS) {
-            if (CS_SAFE_SNPRINTF(browser_entry->type, sizeof(browser_entry->type), "%s", "cheat") != 0) {
-                (void) closedir(dir);
-                if (root_fd >= 0) {
-                    close(root_fd);
-                }
-                return -1;
-            }
-        } else {
-            if (CS_SAFE_SNPRINTF(browser_entry->type, sizeof(browser_entry->type), "%s", "file") != 0) {
-                (void) closedir(dir);
-                if (root_fd >= 0) {
-                    close(root_fd);
-                }
-                return -1;
-            }
-        }
-
-        result->count += 1;
+        sort_entry->is_dir = S_ISDIR(st.st_mode) ? 1 : 0;
+        sort_entry->size = S_ISREG(st.st_mode) ? (unsigned long long) st.st_size : 0;
+        sort_entry->modified = (long long) st.st_mtime;
+        sort_count += 1;
     }
 
     (void) closedir(dir);
     if (root_fd >= 0) {
         close(root_fd);
     }
-    qsort(result->entries, result->count, sizeof(result->entries[0]), cs_browser_entry_compare);
+
+    qsort(sort_buf, sort_count, sizeof(*sort_buf), cs_browser_sort_compare);
+
+    result->total_count = sort_count;
+    result->truncated = scan_truncated;
+
+    for (i = offset; i < sort_count && out_count < CS_BROWSER_PAGE_SIZE; ++i) {
+        const cs_browser_sort_entry *src = &sort_buf[i];
+        cs_browser_entry *dst = &result->entries[out_count];
+        char entry_relative[CS_PATH_MAX];
+        const char *type_str;
+
+        if (relative_path && relative_path[0] != '\0') {
+            if (CS_SAFE_SNPRINTF(entry_relative, sizeof(entry_relative), "%s/%s", relative_path, src->name) != 0) {
+                continue;
+            }
+        } else if (CS_SAFE_SNPRINTF(entry_relative, sizeof(entry_relative), "%s", src->name) != 0) {
+            continue;
+        }
+
+        memset(dst, 0, sizeof(*dst));
+        if (CS_SAFE_SNPRINTF(dst->name, sizeof(dst->name), "%s", src->name) != 0
+            || CS_SAFE_SNPRINTF(dst->path, sizeof(dst->path), "%s", entry_relative) != 0) {
+            free(sort_buf);
+            return -1;
+        }
+        dst->size = src->size;
+        dst->modified = src->modified;
+
+        type_str = cs_browser_entry_type_for_scope(scope, src->is_dir, entry_relative);
+        if (CS_SAFE_SNPRINTF(dst->type, sizeof(dst->type), "%s", type_str) != 0) {
+            free(sort_buf);
+            return -1;
+        }
+
+        if (scope == CS_SCOPE_ROMS && !src->is_dir) {
+            (void) cs_browser_write_thumbnail(root,
+                                              entry_relative,
+                                              dst->thumbnail_path,
+                                              sizeof(dst->thumbnail_path));
+        }
+
+        out_count += 1;
+    }
+
+    result->count = out_count;
+    free(sort_buf);
     return 0;
 }

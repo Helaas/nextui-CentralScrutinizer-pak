@@ -266,6 +266,8 @@ function romBrowserResponse() {
     rootPath: "Roms/Game Boy Advance (GBA)",
     path: "",
     breadcrumbs: [],
+    totalCount: 0,
+    offset: 0,
     truncated: false,
     entries: [
       {
@@ -297,6 +299,8 @@ function savesBrowserResponse() {
     rootPath: "Saves/GBA",
     path: "",
     breadcrumbs: [],
+    totalCount: 0,
+    offset: 0,
     truncated: false,
     entries: [
       {
@@ -327,6 +331,8 @@ function fileBrowserResponse(entries: Array<{
     rootPath: "SD Card",
     path: "",
     breadcrumbs: [],
+    totalCount: 0,
+    offset: 0,
     truncated: false,
     entries,
     ...overrides,
@@ -598,6 +604,8 @@ describe("Page", () => {
       rootPath: "Collections",
       path: "Collections",
       breadcrumbs: [],
+      totalCount: 0,
+      offset: 0,
       truncated: false,
       entries: [
         {
@@ -637,6 +645,8 @@ describe("Page", () => {
       rootPath: "Screenshots",
       path: "Screenshots",
       breadcrumbs: [],
+      totalCount: 0,
+      offset: 0,
       truncated: false,
       entries: [
         {

@@ -24,6 +24,8 @@ describe("ScreenshotsToolView", () => {
       rootPath: "Screenshots",
       path: "Screenshots",
       breadcrumbs: [],
+      totalCount: 0,
+      offset: 0,
       truncated: false,
       entries: [
         {
@@ -67,6 +69,8 @@ describe("ScreenshotsToolView", () => {
       rootPath: "Screenshots",
       path: "Screenshots",
       breadcrumbs: [],
+      totalCount: 0,
+      offset: 0,
       truncated: false,
       entries: [],
     });

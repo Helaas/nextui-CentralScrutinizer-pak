@@ -67,6 +67,8 @@ describe("CollectionEditorModal", () => {
           rootPath: "Roms/Game Boy Advance (GBA)",
           path: "",
           breadcrumbs: [],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -98,6 +100,8 @@ describe("CollectionEditorModal", () => {
         rootPath: "Roms/Game Boy Advance (GBA)",
         path,
         breadcrumbs: [{ label: "RPG", path: "RPG" }],
+        totalCount: 0,
+        offset: 0,
         truncated: false,
         entries: [
           {
