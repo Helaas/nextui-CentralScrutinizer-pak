@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "../components/app-shell";
 import { BrowserView } from "../components/browser-view";
@@ -283,10 +283,18 @@ export default function Page() {
     enabled: browserContext !== null,
   });
 
+  const browserRefreshRef = useRef(browser.refresh);
+  browserRefreshRef.current = browser.refresh;
+
   async function refreshCurrentData(currentCsrf = session?.csrf) {
     await loadPlatforms(currentCsrf);
-    await browser.refresh();
+    await browserRefreshRef.current();
   }
+
+  const browserResponse = useMemo(
+    () => (browser.metadata ? { ...browser.metadata, entries: browser.entries } : null),
+    [browser.metadata, browser.entries],
+  );
 
   function clearTransfer() {
     setTransfer({ active: false, label: "", progress: 0 });
@@ -1266,7 +1274,7 @@ export default function Page() {
           void handleUploadFiles(files);
         }}
         csrf={session.csrf}
-        response={{ ...browser.metadata, entries: browser.entries }}
+        response={browserResponse!}
         searchResults={isFileBrowserTool(viewState) ? fileSearchResults : null}
         scope={isFileBrowserTool(viewState) ? "files" : viewState.scope}
         search={shellSearchValue}
@@ -1274,7 +1282,9 @@ export default function Page() {
         transfer={transfer}
       />
     ) : viewState.view === "browser" || isFileBrowserTool(viewState) ? (
-      <div className="py-12 text-center text-sm text-[var(--muted)]">Loading browser...</div>
+      <div className="py-12 text-center text-sm text-[var(--muted)]">
+        {browser.error ?? "Loading browser..."}
+      </div>
     ) : viewState.view === "tools" && viewState.tool === "logs" ? (
       <LogsToolView
         csrf={session.csrf}

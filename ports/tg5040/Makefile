@@ -12,7 +12,7 @@ SDL_LDFLAGS := $(shell $(PKG_CONFIG) --libs sdl2) -lSDL2_ttf -lSDL2_image
 
 CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Wno-unused-parameter \
 	-mcpu=cortex-a53 -mtune=cortex-a53 \
-	-DPLATFORM_TG5040 -DNO_SSL -DCS_ENABLE_APOSTROPHE_UI -DUSE_WEBSOCKET \
+	-DPLATFORM_TG5040 -DNO_SSL -DCS_ENABLE_APOSTROPHE_UI -DUSE_WEBSOCKET -DHAVE_POLL \
 	-ffunction-sections -fdata-sections \
 	$(INCLUDES) $(SDL_CFLAGS)
 

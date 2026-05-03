@@ -101,12 +101,14 @@ function BrowserMoveModal({
   );
   const [loading, setLoading] = useState(!canUseInitialResponse);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const initialResponseRef = useRef(initialResponse);
+  initialResponseRef.current = initialResponse;
 
   useEffect(() => {
     let active = true;
 
     if (initialResponseComplete && initialResponsePath === currentPath) {
-      setCurrentResponse(initialResponse);
+      setCurrentResponse(initialResponseRef.current);
       setLoadError(null);
       setLoading(false);
       return () => {
@@ -149,7 +151,7 @@ function BrowserMoveModal({
     return () => {
       active = false;
     };
-  }, [csrf, currentPath, initialResponse, initialResponseComplete, initialResponsePath]);
+  }, [csrf, currentPath, initialResponseComplete, initialResponsePath]);
 
   const directories = currentResponse?.entries.filter((entry) => entry.type === "directory") ?? [];
   const canMoveHere = currentResponse ? canMoveEntriesToDestination(entries, currentResponse.path) : false;

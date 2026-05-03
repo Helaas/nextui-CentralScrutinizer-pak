@@ -168,7 +168,6 @@ export function useBrowserPagination(params: BrowserPaginationParams): BrowserPa
 
   const refresh = useCallback(async () => {
     if (!enabled || !scope || !csrf) {
-      requestSeqRef.current += 1;
       abortLoadMore();
       setIsLoadingMore(false);
       return;

@@ -50,7 +50,7 @@ update-apostrophe: $(APOSTROPHE_DIR)/include/apostrophe.h
 
 mac:
 	@mkdir -p $(BUILD_DIR)/mac
-	cc -std=gnu11 -O0 -g -DPLATFORM_MAC -DNO_SSL $(COMMON_INCLUDES) $(MAC_UI_CFLAGS) \
+	cc -std=gnu11 -O0 -g -DPLATFORM_MAC -DNO_SSL -DHAVE_POLL $(COMMON_INCLUDES) $(MAC_UI_CFLAGS) \
 		-o $(BUILD_DIR)/mac/$(APP_NAME) $(SRC_APP) $(MAC_UI_LDFLAGS) -lm -lpthread
 
 all: tg5040 tg5050 my355
