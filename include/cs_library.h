@@ -6,7 +6,7 @@
 #include "cs_paths.h"
 #include "cs_platforms.h"
 
-#define CS_BROWSER_PAGE_SIZE 100
+#define CS_BROWSER_PAGE_SIZE 512
 #define CS_BROWSER_SCAN_CAP 4096
 #define CS_BROWSER_MAX_BREADCRUMBS 32
 #define CS_BROWSER_QUERY_MAX 256

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getBrowser } from "./api";
 import type { BrowserEntry, BrowserResponse, BrowserScope } from "./types";
 
-export const BROWSER_PAGE_SIZE = 100;
+export const BROWSER_PAGE_SIZE = 512;
 export const BROWSER_SEARCH_DEBOUNCE_MS = 300;
 
 export type BrowserMetadata = Omit<BrowserResponse, "entries">;
