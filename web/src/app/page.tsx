@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "../components/app-shell";
 import { BrowserView } from "../components/browser-view";
@@ -21,7 +21,6 @@ import {
   beginUploadFilesBatched,
   createFolder,
   deleteItem,
-  getBrowser,
   getPlatforms,
   getSession,
   pairBrowser,
@@ -34,6 +33,7 @@ import {
   writeTextFile,
 } from "../lib/api";
 import { getBrowserId } from "../lib/browser-id";
+import { useBrowserPagination } from "../lib/use-browser-pagination";
 import {
   createPlatformDisplayNames,
   filterPlatformGroups,
@@ -53,7 +53,6 @@ import {
 import { PLAINTEXT_MAX_BYTES } from "../lib/plaintext";
 import type {
   BrowserEntry,
-  BrowserResponse,
   BrowserScope,
   FileSearchResult,
   LibraryEmuFilter,
@@ -196,7 +195,6 @@ export default function Page() {
     typeof window === "undefined" ? "installed" : readLibraryEmuFilter(window.location.search),
   );
   const [platformGroups, setPlatformGroups] = useState<PlatformGroup[]>([]);
-  const [browserResponse, setBrowserResponse] = useState<BrowserResponse | null>(null);
   const [fileSearchResults, setFileSearchResults] = useState<FileSearchResult[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pairError, setPairError] = useState<string | null>(null);
@@ -255,38 +253,48 @@ export default function Page() {
     return nextSession;
   }
 
-  async function refreshBrowser(
-    currentView = viewState,
-    currentCsrf = session?.csrf,
-    currentGroups = platformGroups,
-  ) {
-    if (!currentCsrf) {
-      setBrowserResponse(null);
-      return;
+  const browserContext = useMemo<{ scope: BrowserScope; tag?: string; path?: string } | null>(() => {
+    if (!session?.csrf) {
+      return null;
     }
+    if (viewState.view === "browser") {
+      const platform = findPlatform(platformGroups, viewState.tag);
 
-    if (currentView.view === "browser") {
-      const platform = findPlatform(currentGroups, currentView.tag);
-
-      if (!platform || !platformSupportsBrowserScope(platform, currentView.scope)) {
-        setBrowserResponse(null);
-        return;
+      if (!platform || !platformSupportsBrowserScope(platform, viewState.scope)) {
+        return null;
       }
-      setBrowserResponse(await getBrowser(currentView.scope, currentCsrf, currentView.tag, currentView.path));
-      return;
+      return { scope: viewState.scope, tag: viewState.tag, path: viewState.path };
     }
-    if (isFileBrowserTool(currentView)) {
-      setBrowserResponse(await getBrowser("files", currentCsrf, undefined, currentView.path));
-      return;
+    if (isFileBrowserTool(viewState)) {
+      return { scope: "files", path: viewState.path };
     }
+    return null;
+  }, [session?.csrf, viewState, platformGroups]);
 
-    setBrowserResponse(null);
+  const browserSearchKey: ShellSearchKey = isFileBrowserTool(viewState) ? "file-browser" : "browser";
+  const browserSearchValue = searchByContext[browserSearchKey];
+
+  const browser = useBrowserPagination({
+    scope: browserContext?.scope ?? null,
+    tag: browserContext?.tag,
+    path: browserContext?.path,
+    search: browserSearchValue,
+    csrf: session?.csrf,
+    enabled: browserContext !== null,
+  });
+
+  const browserRefreshRef = useRef(browser.refresh);
+  browserRefreshRef.current = browser.refresh;
+
+  async function refreshCurrentData(currentCsrf = session?.csrf) {
+    await loadPlatforms(currentCsrf);
+    await browserRefreshRef.current();
   }
 
-  async function refreshCurrentData(currentView = viewState, currentCsrf = session?.csrf) {
-    const groups = await loadPlatforms(currentCsrf);
-    await refreshBrowser(currentView, currentCsrf, groups);
-  }
+  const browserResponse = useMemo(
+    () => (browser.metadata ? { ...browser.metadata, entries: browser.entries } : null),
+    [browser.metadata, browser.entries],
+  );
 
   function clearTransfer() {
     setTransfer({ active: false, label: "", progress: 0 });
@@ -343,7 +351,7 @@ export default function Page() {
             setRetryUnavailableSession(false);
             setSession(pairedSession);
             navigate({ view: "dashboard", destination: "library" }, true);
-            await refreshCurrentData({ view: "dashboard", destination: "library" }, pairedSession.csrf);
+            await refreshCurrentData(pairedSession.csrf);
             return;
           } catch (error) {
             if (!active) {
@@ -387,11 +395,11 @@ export default function Page() {
 
         if (viewState.view === "pair") {
           navigate({ view: "dashboard", destination: "library" }, true);
-          await refreshCurrentData({ view: "dashboard", destination: "library" }, nextSession.csrf);
+          await refreshCurrentData(nextSession.csrf);
           return;
         }
 
-        await refreshCurrentData(viewState, nextSession.csrf);
+        await refreshCurrentData(nextSession.csrf);
       } catch {
         if (active) {
           setConnectionLost(false);
@@ -406,14 +414,6 @@ export default function Page() {
       active = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!session?.paired || connectionLost) {
-      return;
-    }
-
-    void refreshBrowser();
-  }, [connectionLost, session?.paired, viewState]);
 
   useEffect(() => {
     if (viewState.view !== "browser" && viewState.view !== "states") {
@@ -511,13 +511,13 @@ export default function Page() {
           setConnectionLost(false);
           setRetryUnavailableSession(false);
           navigate({ view: "dashboard", destination: "library" }, true);
-          await refreshCurrentData({ view: "dashboard", destination: "library" }, nextSession.csrf);
+          await refreshCurrentData(nextSession.csrf);
           return;
         }
         if (connectionLost || retryUnavailableSession) {
           setConnectionLost(false);
           setRetryUnavailableSession(false);
-          await refreshCurrentData(viewState, nextSession.csrf);
+          await refreshCurrentData(nextSession.csrf);
         }
         schedule(5000);
       } catch {
@@ -574,7 +574,7 @@ export default function Page() {
             setRetryUnavailableSession(false);
             setSession(pairedSession);
             navigate({ view: "dashboard", destination: "library" }, true);
-            await refreshCurrentData({ view: "dashboard", destination: "library" }, pairedSession.csrf);
+            await refreshCurrentData(pairedSession.csrf);
           } catch (error) {
             if (error instanceof ApiError && error.code === "pairing_unavailable") {
               setSession((current) => ({
@@ -823,7 +823,7 @@ export default function Page() {
     const nextName = window.prompt("Rename item", entry.name);
     const csrf = session.csrf;
     const trimmedName = nextName?.trim();
-    const nameInUse = browserResponse?.entries.some(
+    const nameInUse = browser.entries.some(
       (candidate) =>
         candidate.path !== entry.path && candidate.name.toLocaleLowerCase() === (trimmedName ?? "").toLocaleLowerCase(),
     );
@@ -876,34 +876,51 @@ export default function Page() {
     }
 
     await withBusy(async () => {
-      const results = await Promise.allSettled(
-        moves.map(async ({ entry, to }) =>
-          renameItem(
-            {
-              scope: scopeState.scope,
-              tag: scopeState.tag,
-              from: entry.path,
-              to,
-            },
-            csrf,
-          ),
-        ),
-      );
-      const successCount = results.filter((result) => result.status === "fulfilled").length;
-      const failureCount = moves.length - successCount;
-      const destinationLabel = normalizedDestination || "SD Card root";
+      const total = moves.length;
+      let completed = 0;
 
-      await refreshCurrentData();
-      if (failureCount === 0) {
-        setNotice(`Moved ${formatItemCount(successCount)} to ${destinationLabel}.`);
-        return;
-      }
-      if (successCount === 0) {
-        setNotice(`Failed to move ${formatItemCount(moves.length)}.`);
-        return;
-      }
+      setTransfer({ active: true, label: `Moving ${formatItemCount(total)}...`, progress: 0 });
+      try {
+        const results = await Promise.allSettled(
+          moves.map(async ({ entry, to }) => {
+            try {
+              return await renameItem(
+                {
+                  scope: scopeState.scope,
+                  tag: scopeState.tag,
+                  from: entry.path,
+                  to,
+                },
+                csrf,
+              );
+            } finally {
+              completed++;
+              setTransfer({
+                active: true,
+                label: `Moving ${completed} of ${total} item${total === 1 ? "" : "s"}...`,
+                progress: Math.round((completed / total) * 100),
+              });
+            }
+          }),
+        );
+        const successCount = results.filter((result) => result.status === "fulfilled").length;
+        const failureCount = moves.length - successCount;
+        const destinationLabel = normalizedDestination || "SD Card root";
 
-      setNotice(`Moved ${successCount} of ${moves.length} items to ${destinationLabel}. ${failureCount} failed.`);
+        await refreshCurrentData();
+        if (failureCount === 0) {
+          setNotice(`Moved ${formatItemCount(successCount)} to ${destinationLabel}.`);
+          return;
+        }
+        if (successCount === 0) {
+          setNotice(`Failed to move ${formatItemCount(moves.length)}.`);
+          return;
+        }
+
+        setNotice(`Moved ${successCount} of ${moves.length} items to ${destinationLabel}. ${failureCount} failed.`);
+      } finally {
+        clearTransfer();
+      }
     });
   };
 
@@ -983,23 +1000,42 @@ export default function Page() {
     }
 
     await withBusy(async () => {
-      const results = await Promise.allSettled(
-        entries.map(async (entry) => deleteItem({ scope: scopeState.scope, tag: scopeState.tag, path: entry.path }, csrf)),
-      );
-      const successCount = results.filter((result) => result.status === "fulfilled").length;
-      const failureCount = entries.length - successCount;
+      const total = entries.length;
+      let completed = 0;
 
-      await refreshCurrentData();
-      if (failureCount === 0) {
-        setNotice(`Deleted ${formatItemCount(successCount)}.`);
-        return;
-      }
-      if (successCount === 0) {
-        setNotice(`Failed to delete ${formatItemCount(entries.length)}.`);
-        return;
-      }
+      setTransfer({ active: true, label: `Deleting ${formatItemCount(total)}...`, progress: 0 });
+      try {
+        const results = await Promise.allSettled(
+          entries.map(async (entry) => {
+            try {
+              return await deleteItem({ scope: scopeState.scope, tag: scopeState.tag, path: entry.path }, csrf);
+            } finally {
+              completed++;
+              setTransfer({
+                active: true,
+                label: `Deleting ${completed} of ${total} item${total === 1 ? "" : "s"}...`,
+                progress: Math.round((completed / total) * 100),
+              });
+            }
+          }),
+        );
+        const successCount = results.filter((result) => result.status === "fulfilled").length;
+        const failureCount = total - successCount;
 
-      setNotice(`Deleted ${successCount} of ${entries.length} items. ${failureCount} failed.`);
+        await refreshCurrentData();
+        if (failureCount === 0) {
+          setNotice(`Deleted ${formatItemCount(successCount)}.`);
+          return;
+        }
+        if (successCount === 0) {
+          setNotice(`Failed to delete ${formatItemCount(total)}.`);
+          return;
+        }
+
+        setNotice(`Deleted ${successCount} of ${total} items. ${failureCount} failed.`);
+      } finally {
+        clearTransfer();
+      }
     });
   };
 
@@ -1034,7 +1070,7 @@ export default function Page() {
         searchPlaceholder: "Search in current folder",
         showPageHeader: false,
         showSearch: false,
-        title: browserResponse?.title ?? "Browser",
+        title: browser.metadata?.title ?? "Browser",
       };
     }
     if (isFileBrowserTool(viewState)) {
@@ -1155,11 +1191,14 @@ export default function Page() {
         }}
         platform={activePlatform}
       />
-    ) : (showManagedBrowserView || isFileBrowserTool(viewState)) && browserResponse ? (
+    ) : (showManagedBrowserView || isFileBrowserTool(viewState)) && browser.metadata ? (
       <BrowserView
         busy={isBusy}
         canUploadFolder={canUploadFolder}
+        hasMore={browser.hasMore}
+        isLoadingMore={browser.isLoadingMore}
         notice={notice}
+        onLoadMore={browser.loadMore}
         onBack={() => {
           if (isFileBrowserTool(viewState)) {
             navigate({ view: "tools", destination: "tools" });
@@ -1235,7 +1274,7 @@ export default function Page() {
           void handleUploadFiles(files);
         }}
         csrf={session.csrf}
-        response={browserResponse}
+        response={browserResponse!}
         searchResults={isFileBrowserTool(viewState) ? fileSearchResults : null}
         scope={isFileBrowserTool(viewState) ? "files" : viewState.scope}
         search={shellSearchValue}
@@ -1243,7 +1282,9 @@ export default function Page() {
         transfer={transfer}
       />
     ) : viewState.view === "browser" || isFileBrowserTool(viewState) ? (
-      <div className="py-12 text-center text-sm text-[var(--muted)]">Loading browser...</div>
+      <div className="py-12 text-center text-sm text-[var(--muted)]">
+        {browser.error ?? "Loading browser..."}
+      </div>
     ) : viewState.view === "tools" && viewState.tool === "logs" ? (
       <LogsToolView
         csrf={session.csrf}

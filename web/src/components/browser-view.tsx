@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import JSZip from "jszip";
 
-import { buildDownloadUrl, getBrowser } from "../lib/api";
+import { buildDownloadUrl, getBrowserAll } from "../lib/api";
 import { BROWSER_MOVE_DRAG_TYPE } from "../lib/drag-types";
 import type {
   BrowserEntry,
@@ -19,18 +19,6 @@ import { NoticeToast } from "./notice-toast";
 import { TransferBar } from "./transfer-bar";
 
 const BROWSER_MOVE_IGNORED_DRAG_TYPES = [BROWSER_MOVE_DRAG_TYPE];
-
-function filterEntries(entries: BrowserEntry[], search: string): BrowserEntry[] {
-  const query = search.trim().toLowerCase();
-
-  if (!query) {
-    return entries;
-  }
-
-  return entries.filter(
-    (entry) => entry.name.toLowerCase().includes(query) || entry.path.toLowerCase().includes(query),
-  );
-}
 
 function getDisplayRoot(scope: BrowserScope, response: BrowserResponse): string {
   return scope === "files" ? "SD Card" : response.rootPath;
@@ -93,29 +81,34 @@ function BrowserMoveModal({
   csrf,
   entries,
   initialResponse,
+  initialResponseComplete = true,
   onCancel,
   onConfirm,
 }: {
   csrf?: string | null;
   entries: BrowserEntry[];
   initialResponse: BrowserResponse;
+  initialResponseComplete?: boolean;
   onCancel: () => void;
   onConfirm: (destinationPath: string) => void;
 }) {
   const initialPath = getParentBrowserPath(normalizeBrowserPath(initialResponse.path));
   const initialResponsePath = normalizeBrowserPath(initialResponse.path);
+  const canUseInitialResponse = initialResponseComplete && initialResponsePath === initialPath;
   const [currentPath, setCurrentPath] = useState<string | undefined>(initialPath);
   const [currentResponse, setCurrentResponse] = useState<BrowserResponse | null>(
-    initialResponsePath === initialPath ? initialResponse : null,
+    canUseInitialResponse ? initialResponse : null,
   );
-  const [loading, setLoading] = useState(initialResponsePath !== initialPath);
+  const [loading, setLoading] = useState(!canUseInitialResponse);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const initialResponseRef = useRef(initialResponse);
+  initialResponseRef.current = initialResponse;
 
   useEffect(() => {
     let active = true;
 
-    if (initialResponsePath === currentPath) {
-      setCurrentResponse(initialResponse);
+    if (initialResponseComplete && initialResponsePath === currentPath) {
+      setCurrentResponse(initialResponseRef.current);
       setLoadError(null);
       setLoading(false);
       return () => {
@@ -133,7 +126,7 @@ function BrowserMoveModal({
 
     setLoading(true);
     setLoadError(null);
-    void getBrowser("files", csrf, undefined, currentPath)
+    void getBrowserAll("files", csrf, undefined, currentPath)
       .then((nextResponse) => {
         if (!active) {
           return;
@@ -158,7 +151,7 @@ function BrowserMoveModal({
     return () => {
       active = false;
     };
-  }, [csrf, currentPath, initialResponse, initialResponsePath]);
+  }, [csrf, currentPath, initialResponseComplete, initialResponsePath]);
 
   const directories = currentResponse?.entries.filter((entry) => entry.type === "directory") ?? [];
   const canMoveHere = currentResponse ? canMoveEntriesToDestination(entries, currentResponse.path) : false;
@@ -282,7 +275,10 @@ export function BrowserView({
   busy = false,
   canUploadFolder = false,
   csrf,
+  hasMore = false,
+  isLoadingMore = false,
   notice,
+  onLoadMore,
   response,
   scope,
   search = "",
@@ -308,7 +304,10 @@ export function BrowserView({
   busy?: boolean;
   canUploadFolder?: boolean;
   csrf?: string | null;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
   notice?: string | null;
+  onLoadMore?: () => void;
   response: BrowserResponse;
   scope: BrowserScope;
   search?: string;
@@ -340,8 +339,12 @@ export function BrowserView({
   const isFiles = scope === "files";
   const allowDroppedDirectories = canUploadFolder && (isFiles || scope === "roms");
   const fullPath = getFullPath(scope, response);
-  const itemCount = response.entries.length;
-  const entries = filterEntries(response.entries, search);
+  const responseTotalCount = Number.isFinite(response.totalCount) ? response.totalCount : 0;
+  const totalCount = Math.max(responseTotalCount, response.entries.length);
+  const itemCountLabel = formatItemCount(totalCount);
+  const entries = response.entries;
+  const remaining = Math.max(totalCount - entries.length, 0);
+  const canReuseMoveInitialResponse = search.trim().length === 0 && !hasMore;
   const selectedEntries = entries.filter((entry) => selectedPaths.includes(entry.path));
   const allSelected = entries.length > 0 && entries.every((entry) => selectedPaths.includes(entry.path));
   const partiallySelected = selectedEntries.length > 0 && !allSelected;
@@ -359,7 +362,7 @@ export function BrowserView({
         ? current
         : next;
     });
-  }, [response.entries, search]);
+  }, [entries]);
 
   useEffect(() => {
     if (searchResults) {
@@ -467,7 +470,7 @@ export function BrowserView({
           breadcrumbs={response.breadcrumbs}
           busy={busy}
           canUploadFolder={canUploadFolder}
-          itemCount={itemCount}
+          itemCount={totalCount}
           onBack={onBack}
           onCreateFolder={onCreateFolder}
           onNavigate={onNavigate}
@@ -548,6 +551,12 @@ export function BrowserView({
         onCancel={transfer.onCancel}
         progress={transfer.progress}
       />
+      {response.truncated ? (
+        <section className="rounded-lg border border-amber-300/25 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
+          This folder contains more entries than the browser will list at once. Only the first {totalCount.toLocaleString()}{" "}
+          entries are reachable here — split the folder into subfolders to see the rest.
+        </section>
+      ) : null}
       {visibleNotice ? <NoticeToast message={visibleNotice} onDismiss={dismissVisibleNotice} /> : null}
       {isFiles && searchResults ? (
         <section className="rounded-[24px] border border-[var(--border)] bg-[var(--panel)] px-5 py-4">
@@ -627,6 +636,18 @@ export function BrowserView({
           tag={tag}
         />
       )}
+      {!searchResults && hasMore && onLoadMore ? (
+        <div className="flex justify-center">
+          <button
+            className="rounded-md border border-[var(--border)] bg-[var(--panel-alt)] px-5 py-2 text-sm font-medium text-[var(--text)] transition hover:border-[var(--accent)]/50 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isLoadingMore}
+            onClick={onLoadMore}
+            type="button"
+          >
+            {isLoadingMore ? "Loading..." : `Load more (${remaining.toLocaleString()} remaining)`}
+          </button>
+        </div>
+      ) : null}
       {isFiles ? (
         <div className="flex flex-wrap gap-2">
           {entries
@@ -649,7 +670,7 @@ export function BrowserView({
       {isFiles ? (
         <footer className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)]">
           <div className="flex flex-col gap-1">
-            <p>{formatItemCount(itemCount)}</p>
+            <p>{itemCountLabel}</p>
             <p className="break-all">{fullPath}</p>
           </div>
         </footer>
@@ -684,6 +705,7 @@ export function BrowserView({
           csrf={csrf}
           entries={moveSelectionEntries}
           initialResponse={response}
+          initialResponseComplete={canReuseMoveInitialResponse}
           onCancel={() => {
             setMoveSelectionEntries(null);
           }}

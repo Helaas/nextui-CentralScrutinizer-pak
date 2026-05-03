@@ -26,6 +26,7 @@ const mockApi = vi.hoisted(() => ({
   createFolder: vi.fn(),
   deleteItem: vi.fn(),
   getBrowser: vi.fn(),
+  getBrowserAll: vi.fn(),
   getMacDotfiles: vi.fn(),
   getPlatforms: vi.fn(),
   getSaveStates: vi.fn(),
@@ -266,6 +267,8 @@ function romBrowserResponse() {
     rootPath: "Roms/Game Boy Advance (GBA)",
     path: "",
     breadcrumbs: [],
+    totalCount: 0,
+    offset: 0,
     truncated: false,
     entries: [
       {
@@ -297,6 +300,8 @@ function savesBrowserResponse() {
     rootPath: "Saves/GBA",
     path: "",
     breadcrumbs: [],
+    totalCount: 0,
+    offset: 0,
     truncated: false,
     entries: [
       {
@@ -327,6 +332,8 @@ function fileBrowserResponse(entries: Array<{
     rootPath: "SD Card",
     path: "",
     breadcrumbs: [],
+    totalCount: 0,
+    offset: 0,
     truncated: false,
     entries,
     ...overrides,
@@ -598,6 +605,8 @@ describe("Page", () => {
       rootPath: "Collections",
       path: "Collections",
       breadcrumbs: [],
+      totalCount: 0,
+      offset: 0,
       truncated: false,
       entries: [
         {
@@ -637,6 +646,8 @@ describe("Page", () => {
       rootPath: "Screenshots",
       path: "Screenshots",
       breadcrumbs: [],
+      totalCount: 0,
+      offset: 0,
       truncated: false,
       entries: [
         {
@@ -785,6 +796,72 @@ describe("Page", () => {
     );
   });
 
+  it("shows delete progress while bulk file deletes are pending", async () => {
+    const resolveDeletes: Array<() => void> = [];
+
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser
+      .mockResolvedValueOnce(
+        fileBrowserResponse([
+          {
+            name: "Saves",
+            path: "Saves",
+            type: "directory",
+            size: 0,
+            modified: 1_700_000_000,
+            status: "",
+            thumbnailPath: "",
+          },
+          {
+            name: "Imports",
+            path: "Imports",
+            type: "directory",
+            size: 0,
+            modified: 1_700_000_100,
+            status: "",
+            thumbnailPath: "",
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(fileBrowserResponse());
+    mockApi.deleteItem.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveDeletes.push(resolve);
+        }),
+    );
+
+    render(<Page />);
+
+    await openFileBrowserTool();
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select Saves" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Imports" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Selected" }));
+
+    expect(await screen.findByText("Deleting 2 items...")).toBeTruthy();
+    expect(screen.getByText("0%")).toBeTruthy();
+
+    await waitFor(() => {
+      expect(mockApi.deleteItem).toHaveBeenCalledTimes(2);
+    });
+
+    await act(async () => {
+      resolveDeletes[0]?.();
+    });
+
+    expect(await screen.findByText("Deleting 1 of 2 items...")).toBeTruthy();
+    expect(screen.getByText("50%")).toBeTruthy();
+
+    await act(async () => {
+      resolveDeletes[1]?.();
+    });
+
+    expect(await screen.findByText("Deleted 2 items.")).toBeTruthy();
+    expect(mockApi.getBrowser).toHaveBeenCalledTimes(2);
+  });
+
   it("renames a files entry through the inline rename action from the tool workspace", async () => {
     vi.spyOn(window, "prompt").mockReturnValue("Archives");
     mockApi.getSession.mockResolvedValue(pairedSession());
@@ -893,16 +970,16 @@ describe("Page", () => {
           },
         ]),
       )
-      .mockResolvedValueOnce(
-        fileBrowserResponse(
-          [],
-          {
-            path: "Archives",
-            breadcrumbs: [{ label: "Archives", path: "Archives" }],
-          },
-        ),
-      )
       .mockResolvedValueOnce(fileBrowserResponse());
+    mockApi.getBrowserAll.mockResolvedValueOnce(
+      fileBrowserResponse(
+        [],
+        {
+          path: "Archives",
+          breadcrumbs: [{ label: "Archives", path: "Archives" }],
+        },
+      ),
+    );
     mockApi.renameItem.mockResolvedValue(undefined);
 
     render(<Page />);

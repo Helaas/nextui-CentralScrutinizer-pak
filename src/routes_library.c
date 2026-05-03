@@ -7,6 +7,7 @@
 #include "civetweb.h"
 
 #include <dirent.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,6 +32,33 @@ static int cs_method_is(const struct mg_connection *conn, const char *method) {
     const struct mg_request_info *request = mg_get_request_info(conn);
 
     return request && request->request_method && strcmp(request->request_method, method) == 0;
+}
+
+static int cs_parse_offset(const char *value, size_t *offset_out) {
+    char *end = NULL;
+    unsigned long parsed;
+
+    if (!value || !offset_out) {
+        return -1;
+    }
+    if (value[0] == '\0') {
+        *offset_out = 0;
+        return 0;
+    }
+    for (const char *cursor = value; *cursor != '\0'; ++cursor) {
+        if (*cursor < '0' || *cursor > '9') {
+            return -1;
+        }
+    }
+
+    errno = 0;
+    parsed = strtoul(value, &end, 10);
+    if (errno != 0 || !end || *end != '\0' || (size_t) parsed != parsed) {
+        return -1;
+    }
+
+    *offset_out = (size_t) parsed;
+    return 0;
 }
 
 static int cs_write_json(struct mg_connection *conn, int status, const char *reason, const char *body) {
@@ -510,11 +538,15 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
     char scope_value[32];
     char tag_value[64];
     char path_value[CS_PATH_MAX];
+    char offset_value[32];
+    char query_value[CS_BROWSER_QUERY_MAX];
     cs_browser_scope scope;
     cs_platform_info resolved_platform = {0};
     const cs_platform_info *platform = NULL;
     cs_browser_result *result = NULL;
+    cs_browser_list_status browser_status;
     size_t i;
+    size_t offset = 0;
     int first_entry = 1;
     int guard_status;
 
@@ -529,6 +561,8 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
     memset(scope_value, 0, sizeof(scope_value));
     memset(tag_value, 0, sizeof(tag_value));
     memset(path_value, 0, sizeof(path_value));
+    memset(offset_value, 0, sizeof(offset_value));
+    memset(query_value, 0, sizeof(query_value));
 
     if (!request || !request->query_string || request->query_string[0] == '\0') {
         return cs_write_json(conn, 400, "Bad Request", "{\"error\":\"missing_scope\"}");
@@ -544,6 +578,20 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
 
     (void) mg_get_var(request->query_string, strlen(request->query_string), "tag", tag_value, sizeof(tag_value));
     (void) mg_get_var(request->query_string, strlen(request->query_string), "path", path_value, sizeof(path_value));
+    (void) mg_get_var(request->query_string,
+                      strlen(request->query_string),
+                      "offset",
+                      offset_value,
+                      sizeof(offset_value));
+    (void) mg_get_var(request->query_string,
+                      strlen(request->query_string),
+                      "q",
+                      query_value,
+                      sizeof(query_value));
+
+    if (cs_parse_offset(offset_value, &offset) != 0) {
+        return cs_write_json(conn, 400, "Bad Request", "{\"error\":\"invalid_offset\"}");
+    }
 
     if (cs_browser_scope_requires_platform(scope)) {
         if (cs_platform_resolve(&app->paths, tag_value, &resolved_platform) != 0) {
@@ -561,9 +609,13 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
         return cs_write_json(conn, 500, "Internal Server Error", "{\"error\":\"alloc_failed\"}");
     }
 
-    if (cs_browser_list(&app->paths, scope, platform, path_value, result) != 0) {
+    browser_status = cs_browser_list(&app->paths, scope, platform, path_value, offset, query_value, result);
+    if (browser_status != CS_BROWSER_LIST_OK) {
         free(result);
-        return cs_write_json(conn, 404, "Not Found", "{\"error\":\"path_not_found\"}");
+        if (browser_status == CS_BROWSER_LIST_NOT_FOUND) {
+            return cs_write_json(conn, 404, "Not Found", "{\"error\":\"path_not_found\"}");
+        }
+        return cs_write_json(conn, 500, "Internal Server Error", "{\"error\":\"browser_list_failed\"}");
     }
 
     if (cs_stream_begin_json_response(conn) != 0) {
@@ -599,7 +651,11 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
         }
     }
 
-    if (cs_stream_literal(conn, "],\"truncated\":") != 0
+    if (cs_stream_literal(conn, "],\"totalCount\":") != 0
+        || cs_stream_unsigned(conn, (unsigned long long) result->total_count) != 0
+        || cs_stream_literal(conn, ",\"offset\":") != 0
+        || cs_stream_unsigned(conn, (unsigned long long) result->offset) != 0
+        || cs_stream_literal(conn, ",\"truncated\":") != 0
         || cs_stream_literal(conn, result->truncated ? "true" : "false") != 0) {
         goto stream_fail;
     }

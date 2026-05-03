@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { buildDownloadUrl, deleteItem, getBrowser, readTextFile, uploadFiles } from "../lib/api";
+import { buildDownloadUrl, deleteItem, getBrowserAll, readTextFile, uploadFiles } from "../lib/api";
 import { CollectionEditorModal } from "./collection-editor-modal";
 
 type CollectionItem = {
@@ -59,14 +59,14 @@ export function CollectionsToolView({
           throw new Error("Missing session csrf token.");
         }
 
-        const root = await getBrowser("files", csrf, undefined, "Collections");
+        const root = await getBrowserAll("files", csrf, undefined, "Collections");
         const mediaExists = root.entries.some((entry) => entry.type === "directory" && entry.name === ".media");
         const iconPaths = new Map<string, string>();
         let nextBackgroundPath: string | null = null;
 
         if (mediaExists) {
           try {
-            const media = await getBrowser("files", csrf, undefined, "Collections/.media");
+            const media = await getBrowserAll("files", csrf, undefined, "Collections/.media");
 
             for (const entry of media.entries) {
               if (entry.type === "directory") {

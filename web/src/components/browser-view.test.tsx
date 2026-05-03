@@ -8,6 +8,7 @@ const mockApi = vi.hoisted(() => ({
   createFolder: vi.fn(),
   deleteItem: vi.fn(),
   getBrowser: vi.fn(),
+  getBrowserAll: vi.fn(),
   getPlatforms: vi.fn(),
   getSession: vi.fn(),
   pairBrowser: vi.fn(),
@@ -90,6 +91,8 @@ describe("BrowserView", () => {
           rootPath: "Bios/PS",
           path: "",
           breadcrumbs: [],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -123,7 +126,7 @@ describe("BrowserView", () => {
     expect(screen.queryByText("BIOS Status")).toBeNull();
   });
 
-  it("filters library browser entries using the local search value", () => {
+  it("renders the server-filtered library browser entries without local filtering", () => {
     render(
       <BrowserView
         busy={false}
@@ -143,6 +146,8 @@ describe("BrowserView", () => {
           rootPath: "Roms/Game Boy Advance (GBA)",
           path: "",
           breadcrumbs: [],
+          totalCount: 2,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -172,8 +177,52 @@ describe("BrowserView", () => {
     );
 
     expect(screen.getByRole("link", { name: "Download Metroid Fusion.gba" })).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Download Pokemon Emerald.gba" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Download Pokemon Emerald.gba" })).toBeTruthy();
     expect(screen.getByText("2 items")).toBeTruthy();
+  });
+
+  it("surfaces capped browser listings", () => {
+    render(
+      <BrowserView
+        busy={false}
+        notice={null}
+        onBack={vi.fn()}
+        onCreateFolder={vi.fn()}
+        onDeleteSelection={vi.fn()}
+        onNavigate={vi.fn()}
+        onRefresh={vi.fn()}
+        onRename={vi.fn()}
+        onReplaceArt={vi.fn()}
+        onSearchChange={vi.fn()}
+        onUploadFiles={vi.fn()}
+        response={{
+          scope: "roms",
+          title: "ROMs - Game Boy Advance",
+          rootPath: "Roms/Game Boy Advance (GBA)",
+          path: "",
+          breadcrumbs: [],
+          totalCount: 4096,
+          offset: 0,
+          truncated: true,
+          entries: [
+            {
+              name: "Pokemon Emerald.gba",
+              path: "Pokemon Emerald.gba",
+              type: "rom",
+              size: 1024,
+              modified: 1_700_000_000,
+              status: "",
+              thumbnailPath: "",
+            },
+          ],
+        }}
+        scope="roms"
+        transfer={{ active: false, label: "", progress: 0 }}
+      />,
+    );
+
+    expect(screen.getByText("4,096 items")).toBeTruthy();
+    expect(screen.getByText(/Only the first 4,096 entries are reachable here/i)).toBeTruthy();
   });
 
   it("does not duplicate the root path text in the library header at the scope root", () => {
@@ -196,6 +245,8 @@ describe("BrowserView", () => {
           rootPath: "fixtures/mock_sdcard/Roms/Game Boy Advance (GBA)",
           path: "",
           breadcrumbs: [],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [],
         }}
@@ -228,6 +279,8 @@ describe("BrowserView", () => {
           rootPath: "fixtures/mock_sdcard/Roms/Game Boy Advance (GBA)",
           path: ".media",
           breadcrumbs: [{ label: ".media", path: ".media" }],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [],
         }}
@@ -263,6 +316,8 @@ describe("BrowserView", () => {
           rootPath: "SD Card",
           path: "Imports",
           breadcrumbs: [{ label: "Imports", path: "Imports" }],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -299,13 +354,15 @@ describe("BrowserView", () => {
     const onDeleteSelection = vi.fn();
     const onMoveSelection = vi.fn();
 
-    mockApi.getBrowser
+    mockApi.getBrowserAll
       .mockResolvedValueOnce({
         scope: "files",
         title: "Files",
         rootPath: "SD Card",
         path: "",
         breadcrumbs: [],
+        totalCount: 0,
+        offset: 0,
         truncated: false,
         entries: [
           {
@@ -325,6 +382,8 @@ describe("BrowserView", () => {
         rootPath: "SD Card",
         path: "Archives",
         breadcrumbs: [{ label: "Archives", path: "Archives" }],
+        totalCount: 0,
+        offset: 0,
         truncated: false,
         entries: [],
       });
@@ -350,6 +409,8 @@ describe("BrowserView", () => {
           rootPath: "SD Card",
           path: "Imports",
           breadcrumbs: [{ label: "Imports", path: "Imports" }],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -404,6 +465,100 @@ describe("BrowserView", () => {
     ]);
   });
 
+  it("refetches unfiltered root folders for the move picker when the file list is searched", async () => {
+    const onMoveSelection = vi.fn();
+
+    mockApi.getBrowserAll
+      .mockResolvedValueOnce({
+        scope: "files",
+        title: "Files",
+        rootPath: "SD Card",
+        path: "",
+        breadcrumbs: [],
+        totalCount: 1,
+        offset: 0,
+        truncated: false,
+        entries: [
+          {
+            name: "Archives",
+            path: "Archives",
+            type: "directory",
+            size: 0,
+            modified: 1_700_000_100,
+            status: "",
+            thumbnailPath: "",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        scope: "files",
+        title: "Files",
+        rootPath: "SD Card",
+        path: "Archives",
+        breadcrumbs: [{ label: "Archives", path: "Archives" }],
+        totalCount: 0,
+        offset: 0,
+        truncated: false,
+        entries: [],
+      });
+
+    render(
+      <BrowserView
+        csrf="csrf-token"
+        onBack={vi.fn()}
+        onCreateFolder={vi.fn()}
+        onDeleteSelection={vi.fn()}
+        onMoveSelection={onMoveSelection}
+        onNavigate={vi.fn()}
+        onRefresh={vi.fn()}
+        onRename={vi.fn()}
+        onReplaceArt={vi.fn()}
+        onSearchChange={vi.fn()}
+        onUploadFiles={vi.fn()}
+        response={{
+          scope: "files",
+          title: "Files",
+          rootPath: "SD Card",
+          path: "",
+          breadcrumbs: [],
+          totalCount: 1,
+          offset: 0,
+          truncated: false,
+          entries: [
+            {
+              name: "Pokemon Emerald.gba",
+              path: "Pokemon Emerald.gba",
+              type: "file",
+              size: 1024,
+              modified: 1_700_000_000,
+              status: "",
+              thumbnailPath: "",
+            },
+          ],
+        }}
+        scope="files"
+        search="Pokemon"
+        transfer={{ active: false, label: "", progress: 0 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Pokemon Emerald.gba" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move Selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open folder Archives" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Move Here" }));
+
+    expect(mockApi.getBrowserAll).toHaveBeenNthCalledWith(1, "files", "csrf-token", undefined, undefined);
+    expect(onMoveSelection).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          name: "Pokemon Emerald.gba",
+          path: "Pokemon Emerald.gba",
+        }),
+      ],
+      "Archives",
+    );
+  });
+
   it("disables bulk download when a selected folder is included", () => {
     render(
       <BrowserView
@@ -425,6 +580,8 @@ describe("BrowserView", () => {
           rootPath: "SD Card",
           path: "Imports",
           breadcrumbs: [{ label: "Imports", path: "Imports" }],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -484,6 +641,8 @@ describe("BrowserView", () => {
             { label: "Cheats", path: "Cheats" },
             { label: "DC", path: "Cheats/DC" },
           ],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [],
         }}
@@ -523,6 +682,8 @@ describe("BrowserView", () => {
             { label: "Imports", path: "Imports" },
             { label: "Very", path: "Imports/Very" },
           ],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [],
         }}
@@ -557,6 +718,8 @@ describe("BrowserView", () => {
         rootPath: "SD Card",
         path: "Imports",
         breadcrumbs: [{ label: "Imports", path: "Imports" }],
+        totalCount: 0,
+        offset: 0,
         truncated: false,
         entries: [],
       },
@@ -594,6 +757,8 @@ describe("BrowserView", () => {
         rootPath: "SD Card",
         path: "Imports",
         breadcrumbs: [{ label: "Imports", path: "Imports" }],
+        totalCount: 0,
+        offset: 0,
         truncated: false,
         entries: [],
       },
@@ -648,6 +813,8 @@ describe("BrowserView", () => {
           rootPath: "Roms/Game Boy Advance (GBA)",
           path: "Favorites",
           breadcrumbs: [{ label: "Favorites", path: "Favorites" }],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -708,6 +875,8 @@ describe("BrowserView", () => {
           rootPath: "Saves/GBA",
           path: "",
           breadcrumbs: [],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -762,6 +931,8 @@ describe("BrowserView", () => {
           rootPath: "Saves/GBA",
           path: "",
           breadcrumbs: [],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {
@@ -811,6 +982,8 @@ describe("BrowserView", () => {
           rootPath: "Roms/Game Boy Advance (GBA)",
           path: "",
           breadcrumbs: [],
+          totalCount: 0,
+          offset: 0,
           truncated: false,
           entries: [
             {

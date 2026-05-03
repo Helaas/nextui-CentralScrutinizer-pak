@@ -75,6 +75,8 @@ export type BrowserResponse = {
   path: string;
   breadcrumbs: Breadcrumb[];
   entries: BrowserEntry[];
+  totalCount: number;
+  offset: number;
   truncated: boolean;
 };
 

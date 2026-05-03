@@ -178,12 +178,61 @@ export async function getPlatforms(csrf: string): Promise<PlatformsResponse> {
   return expectJson<PlatformsResponse>(response, "Platforms lookup failed");
 }
 
-export async function getBrowser(scope: BrowserScope, csrf: string, tag?: string, path?: string): Promise<BrowserResponse> {
-  const response = await fetch(`/api/browser${toQuery({ scope, tag, path })}`, {
+export type BrowserRequestOptions = { offset?: number; query?: string; signal?: AbortSignal };
+
+export async function getBrowser(
+  scope: BrowserScope,
+  csrf: string,
+  tag?: string,
+  path?: string,
+  options?: BrowserRequestOptions,
+): Promise<BrowserResponse> {
+  const offset = options?.offset && options.offset > 0 ? String(options.offset) : undefined;
+  const q = options?.query?.trim() ? options.query.trim() : undefined;
+  const response = await fetch(`/api/browser${toQuery({ scope, tag, path, offset, q })}`, {
     headers: csrfHeaders(csrf),
+    signal: options?.signal,
   });
 
   return expectJson<BrowserResponse>(response, "Browser lookup failed");
+}
+
+export async function getBrowserAll(
+  scope: BrowserScope,
+  csrf: string,
+  tag?: string,
+  path?: string,
+  options?: Omit<BrowserRequestOptions, "offset">,
+): Promise<BrowserResponse> {
+  const firstPage = await getBrowser(scope, csrf, tag, path, {
+    query: options?.query,
+    signal: options?.signal,
+  });
+  const entries = [...firstPage.entries];
+  let latestPage = firstPage;
+
+  while (entries.length < latestPage.totalCount) {
+    const nextPage = await getBrowser(scope, csrf, tag, path, {
+      offset: entries.length,
+      query: options?.query,
+      signal: options?.signal,
+    });
+
+    if (nextPage.entries.length === 0) {
+      latestPage = nextPage;
+      break;
+    }
+
+    entries.push(...nextPage.entries);
+    latestPage = nextPage;
+  }
+
+  return {
+    ...firstPage,
+    entries,
+    totalCount: Math.max(latestPage.totalCount, entries.length),
+    truncated: latestPage.truncated,
+  };
 }
 
 export async function getSaveStates(tag: string, csrf: string): Promise<SaveStatesResponse> {
