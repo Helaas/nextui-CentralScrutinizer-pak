@@ -36,8 +36,14 @@ export function useBrowserPagination(params: BrowserPaginationParams): BrowserPa
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestSeqRef = useRef(0);
+  const loadMoreControllerRef = useRef<AbortController | null>(null);
   const debouncedSearchRef = useRef(search);
   const [debouncedSearch, setDebouncedSearch] = useState(search);
+
+  const abortLoadMore = useCallback(() => {
+    loadMoreControllerRef.current?.abort();
+    loadMoreControllerRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (debouncedSearchRef.current === search) {
@@ -72,6 +78,8 @@ export function useBrowserPagination(params: BrowserPaginationParams): BrowserPa
 
   useEffect(() => {
     if (!enabled || !scope || !csrf) {
+      requestSeqRef.current += 1;
+      abortLoadMore();
       setMetadata(null);
       setEntries([]);
       setError(null);
@@ -83,6 +91,8 @@ export function useBrowserPagination(params: BrowserPaginationParams): BrowserPa
     const controller = new AbortController();
     const seq = ++requestSeqRef.current;
 
+    abortLoadMore();
+    setIsLoadingMore(false);
     setIsLoading(true);
     setError(null);
     void (async () => {
@@ -111,9 +121,11 @@ export function useBrowserPagination(params: BrowserPaginationParams): BrowserPa
     })();
 
     return () => {
+      requestSeqRef.current += 1;
       controller.abort();
+      abortLoadMore();
     };
-  }, [enabled, scope, csrf, tag, path, debouncedSearch, fetchPage]);
+  }, [enabled, scope, csrf, tag, path, debouncedSearch, fetchPage, abortLoadMore]);
 
   const loadMore = useCallback(() => {
     if (!metadata || isLoadingMore) {
@@ -124,6 +136,8 @@ export function useBrowserPagination(params: BrowserPaginationParams): BrowserPa
     }
 
     const controller = new AbortController();
+    loadMoreControllerRef.current?.abort();
+    loadMoreControllerRef.current = controller;
     const seq = requestSeqRef.current;
 
     setIsLoadingMore(true);
@@ -144,7 +158,8 @@ export function useBrowserPagination(params: BrowserPaginationParams): BrowserPa
         }
         setError(caught instanceof Error ? caught.message : "Browser lookup failed");
       } finally {
-        if (seq === requestSeqRef.current) {
+        if (loadMoreControllerRef.current === controller) {
+          loadMoreControllerRef.current = null;
           setIsLoadingMore(false);
         }
       }
@@ -153,12 +168,17 @@ export function useBrowserPagination(params: BrowserPaginationParams): BrowserPa
 
   const refresh = useCallback(async () => {
     if (!enabled || !scope || !csrf) {
+      requestSeqRef.current += 1;
+      abortLoadMore();
+      setIsLoadingMore(false);
       return;
     }
 
     const controller = new AbortController();
     const seq = ++requestSeqRef.current;
 
+    abortLoadMore();
+    setIsLoadingMore(false);
     setIsLoading(true);
     setError(null);
     try {
@@ -181,7 +201,7 @@ export function useBrowserPagination(params: BrowserPaginationParams): BrowserPa
         setIsLoading(false);
       }
     }
-  }, [enabled, scope, csrf, fetchPage]);
+  }, [enabled, scope, csrf, fetchPage, abortLoadMore]);
 
   const hasMore = metadata !== null && entries.length < metadata.totalCount;
 

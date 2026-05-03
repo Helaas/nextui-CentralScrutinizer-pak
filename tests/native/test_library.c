@@ -74,7 +74,7 @@ static void test_fixture_browser_scopes_and_rejection(void) {
     assert(gba != NULL);
     assert(ps != NULL);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(strcmp(result.scope, "roms") == 0);
     assert(strcmp(result.title, "ROMs - Game Boy Advance") == 0);
     assert(strcmp(result.root_path, "fixtures/mock_sdcard/Roms/Game Boy Advance (GBA)") == 0);
@@ -87,7 +87,7 @@ static void test_fixture_browser_scopes_and_rejection(void) {
     assert(entry != NULL);
     assert(strcmp(entry->type, "rom") == 0);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_SAVES, gba, "", 0, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_SAVES, gba, "", 0, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(strcmp(result.title, "Saves - Game Boy Advance") == 0);
     assert(strcmp(result.root_path, "fixtures/mock_sdcard/Saves/GBA") == 0);
     assert(result.count == 1);
@@ -95,7 +95,7 @@ static void test_fixture_browser_scopes_and_rejection(void) {
     assert(entry != NULL);
     assert(strcmp(entry->type, "save") == 0);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_BIOS, ps, "", 0, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_BIOS, ps, "", 0, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(strcmp(result.title, "BIOS - Sony PlayStation") == 0);
     assert(strcmp(result.root_path, "fixtures/mock_sdcard/Bios/PS") == 0);
     assert(result.count == 1);
@@ -103,19 +103,19 @@ static void test_fixture_browser_scopes_and_rejection(void) {
     assert(entry != NULL);
     assert(strcmp(entry->type, "bios") == 0);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_OVERLAYS, gba, "", 0, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_OVERLAYS, gba, "", 0, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(strcmp(result.scope, "overlays") == 0);
     assert(strcmp(result.title, "Overlays - Game Boy Advance") == 0);
     assert(strcmp(result.root_path, "fixtures/mock_sdcard/Overlays/GBA") == 0);
     assert(result.count == 0);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_CHEATS, gba, "", 0, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_CHEATS, gba, "", 0, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(strcmp(result.scope, "cheats") == 0);
     assert(strcmp(result.title, "Cheats - Game Boy Advance") == 0);
     assert(strcmp(result.root_path, "fixtures/mock_sdcard/Cheats/GBA") == 0);
     assert(result.count == 0);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_FILES, NULL, "", 0, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_FILES, NULL, "", 0, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(strcmp(result.title, "File Browser") == 0);
     assert(strcmp(result.root_path, "fixtures/mock_sdcard") == 0);
     assert(find_entry(&result, ".userdata") != NULL);
@@ -130,15 +130,16 @@ static void test_fixture_browser_scopes_and_rejection(void) {
                            0,
                            NULL,
                            &result)
-           == 0);
+           == CS_BROWSER_LIST_OK);
     assert(result.breadcrumb_count == 3);
     assert(strcmp(result.breadcrumbs[0].label, ".userdata") == 0);
     assert(strcmp(result.breadcrumbs[1].label, "shared") == 0);
     assert(strcmp(result.breadcrumbs[2].label, "CentralScrutinizer") == 0);
     assert(find_entry(&result, ".keep") != NULL);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, NULL, "", 0, NULL, &result) == -1);
-    assert(cs_browser_list(&paths, CS_SCOPE_FILES, NULL, "../outside", 0, NULL, &result) == -1);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, NULL, "", 0, NULL, &result) == CS_BROWSER_LIST_INTERNAL);
+    assert(cs_browser_list(&paths, CS_SCOPE_FILES, NULL, "../outside", 0, NULL, &result)
+           == CS_BROWSER_LIST_NOT_FOUND);
 }
 
 static void test_rom_thumbnail_resolution_is_png_only(void) {
@@ -175,13 +176,13 @@ static void test_rom_thumbnail_resolution_is_png_only(void) {
 
     set_sdcard_root_realpath(root);
     assert(cs_paths_init(&paths) == 0);
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == CS_BROWSER_LIST_OK);
     entry = find_entry(&result, "Box Art Test.gba");
     assert(entry != NULL);
     assert(strcmp(entry->thumbnail_path, ".media/Box Art Test.png") == 0);
 
     assert(unlink(png_art) == 0);
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == CS_BROWSER_LIST_OK);
     entry = find_entry(&result, "Box Art Test.gba");
     assert(entry != NULL);
     assert(entry->thumbnail_path[0] == '\0');
@@ -224,7 +225,7 @@ static void test_symlink_entries_are_skipped(void) {
 
     set_sdcard_root_realpath(root);
     assert(cs_paths_init(&paths) == 0);
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(result.count == 1);
     assert(result.truncated == 0);
     assert(strcmp(result.entries[0].name, "Pokemon Emerald.gba") == 0);
@@ -264,7 +265,7 @@ static void test_symlinked_scope_root_is_rejected(void) {
 
     set_sdcard_root_realpath(root);
     assert(cs_paths_init(&paths) == 0);
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == -1);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == CS_BROWSER_LIST_NOT_FOUND);
 
     assert(unlink(system_link) == 0);
     assert(unlink(real_rom) == 0);
@@ -306,7 +307,7 @@ static void test_symlinked_absolute_sdcard_root_is_canonicalized_for_files_scope
 
     assert(cs_paths_init(&paths) == 0);
     assert(strcmp(paths.sdcard_root, expected_root) == 0);
-    assert(cs_browser_list(&paths, CS_SCOPE_FILES, NULL, "", 0, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_FILES, NULL, "", 0, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(strcmp(result.root_path, expected_root) == 0);
     assert(find_entry(&result, "Roms") != NULL);
     assert(find_entry(&result, "Bios") != NULL);
@@ -351,7 +352,7 @@ static void test_symlinked_roms_parent_is_rejected(void) {
 
     set_sdcard_root_realpath(root);
     assert(cs_paths_init(&paths) == 0);
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == -1);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == CS_BROWSER_LIST_NOT_FOUND);
 
     assert(unlink(roms_link) == 0);
     assert(unlink(rom_file) == 0);
@@ -368,6 +369,7 @@ static void test_pagination_window_and_total_count(void) {
     char *root;
     char roms_dir[PATH_MAX];
     char system_dir[PATH_MAX];
+    char expected_name[64];
     const size_t total_files = CS_BROWSER_PAGE_SIZE + 50;
     size_t i;
     const cs_platform_info *gba = cs_platform_find("GBA");
@@ -391,27 +393,30 @@ static void test_pagination_window_and_total_count(void) {
     set_sdcard_root_realpath(root);
     assert(cs_paths_init(&paths) == 0);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(result.count == CS_BROWSER_PAGE_SIZE);
     assert(result.total_count == total_files);
     assert(result.offset == 0);
     assert(result.truncated == 0);
     assert(strcmp(result.entries[0].name, "Game 000.gba") == 0);
-    assert(strcmp(result.entries[CS_BROWSER_PAGE_SIZE - 1].name, "Game 099.gba") == 0);
+    assert(snprintf(expected_name, sizeof(expected_name), "Game %03zu.gba", (size_t) CS_BROWSER_PAGE_SIZE - 1u) > 0);
+    assert(strcmp(result.entries[CS_BROWSER_PAGE_SIZE - 1].name, expected_name) == 0);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", CS_BROWSER_PAGE_SIZE, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", CS_BROWSER_PAGE_SIZE, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(result.count == total_files - CS_BROWSER_PAGE_SIZE);
     assert(result.total_count == total_files);
     assert(result.offset == CS_BROWSER_PAGE_SIZE);
-    assert(strcmp(result.entries[0].name, "Game 100.gba") == 0);
-    assert(strcmp(result.entries[result.count - 1].name, "Game 149.gba") == 0);
+    assert(snprintf(expected_name, sizeof(expected_name), "Game %03zu.gba", (size_t) CS_BROWSER_PAGE_SIZE) > 0);
+    assert(strcmp(result.entries[0].name, expected_name) == 0);
+    assert(snprintf(expected_name, sizeof(expected_name), "Game %03zu.gba", total_files - 1) > 0);
+    assert(strcmp(result.entries[result.count - 1].name, expected_name) == 0);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", total_files, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", total_files, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(result.count == 0);
     assert(result.total_count == total_files);
     assert(result.offset == total_files);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", total_files + 10, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", total_files + 10, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(result.count == 0);
     assert(result.total_count == total_files);
 
@@ -460,26 +465,26 @@ static void test_query_filters_results_case_insensitively(void) {
     set_sdcard_root_realpath(root);
     assert(cs_paths_init(&paths) == 0);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, "pokemon", &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, "pokemon", &result) == CS_BROWSER_LIST_OK);
     assert(result.count == 2);
     assert(result.total_count == 2);
     assert(find_entry(&result, "Pokemon Emerald.gba") != NULL);
     assert(find_entry(&result, "Pokemon Ruby.gba") != NULL);
     assert(find_entry(&result, "Metroid Fusion.gba") == NULL);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, "POKEMON", &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, "POKEMON", &result) == CS_BROWSER_LIST_OK);
     assert(result.count == 2);
     assert(result.total_count == 2);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, "EmErAlD", &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, "EmErAlD", &result) == CS_BROWSER_LIST_OK);
     assert(result.count == 1);
     assert(strcmp(result.entries[0].name, "Pokemon Emerald.gba") == 0);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, "nothingmatchesthis", &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, "nothingmatchesthis", &result) == CS_BROWSER_LIST_OK);
     assert(result.count == 0);
     assert(result.total_count == 0);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, "", &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, gba, "", 0, "", &result) == CS_BROWSER_LIST_OK);
     assert(result.count == 4);
     assert(result.total_count == 4);
 
@@ -529,19 +534,19 @@ static void test_ports_browser_supports_hidden_ports_and_rejects_other_resources
     set_sdcard_root_realpath(root);
     assert(cs_paths_init(&paths) == 0);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, ports, "", 0, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, ports, "", 0, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(find_entry(&result, ".ports") != NULL);
     assert(find_entry(&result, "PokeMMO.sh") != NULL);
     assert(find_entry(&result, "0) Search (SHORTCUT)") == NULL);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, ports, ".ports", 0, NULL, &result) == 0);
+    assert(cs_browser_list(&paths, CS_SCOPE_ROMS, ports, ".ports", 0, NULL, &result) == CS_BROWSER_LIST_OK);
     assert(strcmp(result.path, ".ports") == 0);
     assert(find_entry(&result, "port.json") != NULL);
 
-    assert(cs_browser_list(&paths, CS_SCOPE_SAVES, ports, "", 0, NULL, &result) == -1);
-    assert(cs_browser_list(&paths, CS_SCOPE_BIOS, ports, "", 0, NULL, &result) == -1);
-    assert(cs_browser_list(&paths, CS_SCOPE_OVERLAYS, ports, "", 0, NULL, &result) == -1);
-    assert(cs_browser_list(&paths, CS_SCOPE_CHEATS, ports, "", 0, NULL, &result) == -1);
+    assert(cs_browser_list(&paths, CS_SCOPE_SAVES, ports, "", 0, NULL, &result) == CS_BROWSER_LIST_INTERNAL);
+    assert(cs_browser_list(&paths, CS_SCOPE_BIOS, ports, "", 0, NULL, &result) == CS_BROWSER_LIST_INTERNAL);
+    assert(cs_browser_list(&paths, CS_SCOPE_OVERLAYS, ports, "", 0, NULL, &result) == CS_BROWSER_LIST_INTERNAL);
+    assert(cs_browser_list(&paths, CS_SCOPE_CHEATS, ports, "", 0, NULL, &result) == CS_BROWSER_LIST_INTERNAL);
 
     assert(remove(port_manifest) == 0);
     assert(remove(root_script) == 0);

@@ -21,6 +21,12 @@ typedef enum cs_browser_scope {
     CS_SCOPE_FILES = 5,
 } cs_browser_scope;
 
+typedef enum cs_browser_list_status {
+    CS_BROWSER_LIST_OK = 0,
+    CS_BROWSER_LIST_NOT_FOUND = 1,
+    CS_BROWSER_LIST_INTERNAL = 2,
+} cs_browser_list_status;
+
 typedef struct cs_browser_entry {
     char name[256];
     char path[CS_PATH_MAX];
@@ -61,12 +67,12 @@ int cs_browser_root_for_scope(const cs_paths *paths,
                               const cs_platform_info *platform,
                               char *root,
                               size_t root_size);
-int cs_browser_list(const cs_paths *paths,
-                    cs_browser_scope scope,
-                    const cs_platform_info *platform,
-                    const char *relative_path,
-                    size_t offset,
-                    const char *query,
-                    cs_browser_result *result);
+cs_browser_list_status cs_browser_list(const cs_paths *paths,
+                                       cs_browser_scope scope,
+                                       const cs_platform_info *platform,
+                                       const char *relative_path,
+                                       size_t offset,
+                                       const char *query,
+                                       cs_browser_result *result);
 
 #endif

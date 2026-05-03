@@ -544,6 +544,7 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
     cs_platform_info resolved_platform = {0};
     const cs_platform_info *platform = NULL;
     cs_browser_result *result = NULL;
+    cs_browser_list_status browser_status;
     size_t i;
     size_t offset = 0;
     int first_entry = 1;
@@ -608,9 +609,13 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
         return cs_write_json(conn, 500, "Internal Server Error", "{\"error\":\"alloc_failed\"}");
     }
 
-    if (cs_browser_list(&app->paths, scope, platform, path_value, offset, query_value, result) != 0) {
+    browser_status = cs_browser_list(&app->paths, scope, platform, path_value, offset, query_value, result);
+    if (browser_status != CS_BROWSER_LIST_OK) {
         free(result);
-        return cs_write_json(conn, 404, "Not Found", "{\"error\":\"path_not_found\"}");
+        if (browser_status == CS_BROWSER_LIST_NOT_FOUND) {
+            return cs_write_json(conn, 404, "Not Found", "{\"error\":\"path_not_found\"}");
+        }
+        return cs_write_json(conn, 500, "Internal Server Error", "{\"error\":\"browser_list_failed\"}");
     }
 
     if (cs_stream_begin_json_response(conn) != 0) {

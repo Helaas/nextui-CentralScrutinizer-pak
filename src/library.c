@@ -337,6 +337,10 @@ static int cs_browser_sort_compare(const void *left, const void *right) {
     return strcmp(a->name, b->name);
 }
 
+static cs_browser_list_status cs_browser_path_failure_status(int error_code) {
+    return (error_code == ENOENT || error_code == ENOTDIR) ? CS_BROWSER_LIST_NOT_FOUND : CS_BROWSER_LIST_INTERNAL;
+}
+
 static const char *cs_browser_entry_type_for_scope(cs_browser_scope scope, int is_dir, const char *entry_relative) {
     if (is_dir) {
         return "directory";
@@ -508,13 +512,13 @@ int cs_browser_root_for_scope(const cs_paths *paths,
     }
 }
 
-int cs_browser_list(const cs_paths *paths,
-                    cs_browser_scope scope,
-                    const cs_platform_info *platform,
-                    const char *relative_path,
-                    size_t offset,
-                    const char *query,
-                    cs_browser_result *result) {
+cs_browser_list_status cs_browser_list(const cs_paths *paths,
+                                       cs_browser_scope scope,
+                                       const cs_platform_info *platform,
+                                       const char *relative_path,
+                                       size_t offset,
+                                       const char *query,
+                                       cs_browser_result *result) {
     char root[CS_PATH_MAX];
     char target_path[CS_PATH_MAX];
     char guard_root[CS_PATH_MAX];
@@ -530,16 +534,16 @@ int cs_browser_list(const cs_paths *paths,
     size_t i;
 
     if (!paths || !result || scope == CS_SCOPE_INVALID) {
-        return -1;
+        return CS_BROWSER_LIST_INTERNAL;
     }
     if (cs_browser_scope_requires_platform(scope) && !platform) {
-        return -1;
+        return CS_BROWSER_LIST_INTERNAL;
     }
     if (cs_browser_root_for_scope(paths, scope, platform, root, sizeof(root)) != 0) {
-        return -1;
+        return CS_BROWSER_LIST_INTERNAL;
     }
     if (cs_browser_guard_root_for_scope(paths, scope, guard_root, sizeof(guard_root)) != 0) {
-        return -1;
+        return CS_BROWSER_LIST_INTERNAL;
     }
 
     memset(result, 0, sizeof(*result));
@@ -547,13 +551,13 @@ int cs_browser_list(const cs_paths *paths,
     if (CS_SAFE_SNPRINTF(result->scope, sizeof(result->scope), "%s", cs_browser_scope_name(scope)) != 0
         || CS_SAFE_SNPRINTF(result->root_path, sizeof(result->root_path), "%s", root) != 0
         || CS_SAFE_SNPRINTF(result->path, sizeof(result->path), "%s", relative_path ? relative_path : "") != 0) {
-        return -1;
+        return CS_BROWSER_LIST_INTERNAL;
     }
     if (cs_browser_write_title(result->title, sizeof(result->title), scope, platform) != 0) {
-        return -1;
+        return CS_BROWSER_LIST_INTERNAL;
     }
     if (cs_browser_write_breadcrumbs(result, relative_path ? relative_path : "") != 0) {
-        return -1;
+        return CS_BROWSER_LIST_INTERNAL;
     }
 
     if (cs_browser_scope_allows_hidden_for_platform(scope, platform)) {
@@ -565,12 +569,15 @@ int cs_browser_list(const cs_paths *paths,
                                               target_path,
                                               sizeof(target_path))
         != 0) {
-        return -1;
+        return CS_BROWSER_LIST_NOT_FOUND;
     }
 
     root_fd = cs_open_guarded_directory(guard_root, root);
     if (root_fd < 0) {
-        return (scope == CS_SCOPE_FILES || errno != ENOENT) ? -1 : 0;
+        if (scope != CS_SCOPE_FILES && errno == ENOENT) {
+            return CS_BROWSER_LIST_OK;
+        }
+        return cs_browser_path_failure_status(errno);
     }
 
     if (relative_path && relative_path[0] != '\0') {
@@ -580,13 +587,15 @@ int cs_browser_list(const cs_paths *paths,
         dir_fd = root_fd;
     }
     if (dir_fd < 0) {
-        return -1;
+        return cs_browser_path_failure_status(errno);
     }
 
     dir = fdopendir(dir_fd);
     if (!dir) {
+        int saved_errno = errno;
+
         close(dir_fd);
-        return -1;
+        return cs_browser_path_failure_status(saved_errno);
     }
     if (dir_fd == root_fd) {
         root_fd = -1;
@@ -598,7 +607,7 @@ int cs_browser_list(const cs_paths *paths,
         if (root_fd >= 0) {
             close(root_fd);
         }
-        return -1;
+        return CS_BROWSER_LIST_INTERNAL;
     }
 
     while ((entry = readdir(dir)) != NULL) {
@@ -668,7 +677,7 @@ int cs_browser_list(const cs_paths *paths,
         if (CS_SAFE_SNPRINTF(dst->name, sizeof(dst->name), "%s", src->name) != 0
             || CS_SAFE_SNPRINTF(dst->path, sizeof(dst->path), "%s", entry_relative) != 0) {
             free(sort_buf);
-            return -1;
+            return CS_BROWSER_LIST_INTERNAL;
         }
         dst->size = src->size;
         dst->modified = src->modified;
@@ -676,7 +685,7 @@ int cs_browser_list(const cs_paths *paths,
         type_str = cs_browser_entry_type_for_scope(scope, src->is_dir, entry_relative);
         if (CS_SAFE_SNPRINTF(dst->type, sizeof(dst->type), "%s", type_str) != 0) {
             free(sort_buf);
-            return -1;
+            return CS_BROWSER_LIST_INTERNAL;
         }
 
         if (scope == CS_SCOPE_ROMS && !src->is_dir) {
@@ -691,5 +700,5 @@ int cs_browser_list(const cs_paths *paths,
 
     result->count = out_count;
     free(sort_buf);
-    return 0;
+    return CS_BROWSER_LIST_OK;
 }
