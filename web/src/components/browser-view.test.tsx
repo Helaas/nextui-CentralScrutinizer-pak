@@ -465,6 +465,100 @@ describe("BrowserView", () => {
     ]);
   });
 
+  it("refetches unfiltered root folders for the move picker when the file list is searched", async () => {
+    const onMoveSelection = vi.fn();
+
+    mockApi.getBrowserAll
+      .mockResolvedValueOnce({
+        scope: "files",
+        title: "Files",
+        rootPath: "SD Card",
+        path: "",
+        breadcrumbs: [],
+        totalCount: 1,
+        offset: 0,
+        truncated: false,
+        entries: [
+          {
+            name: "Archives",
+            path: "Archives",
+            type: "directory",
+            size: 0,
+            modified: 1_700_000_100,
+            status: "",
+            thumbnailPath: "",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        scope: "files",
+        title: "Files",
+        rootPath: "SD Card",
+        path: "Archives",
+        breadcrumbs: [{ label: "Archives", path: "Archives" }],
+        totalCount: 0,
+        offset: 0,
+        truncated: false,
+        entries: [],
+      });
+
+    render(
+      <BrowserView
+        csrf="csrf-token"
+        onBack={vi.fn()}
+        onCreateFolder={vi.fn()}
+        onDeleteSelection={vi.fn()}
+        onMoveSelection={onMoveSelection}
+        onNavigate={vi.fn()}
+        onRefresh={vi.fn()}
+        onRename={vi.fn()}
+        onReplaceArt={vi.fn()}
+        onSearchChange={vi.fn()}
+        onUploadFiles={vi.fn()}
+        response={{
+          scope: "files",
+          title: "Files",
+          rootPath: "SD Card",
+          path: "",
+          breadcrumbs: [],
+          totalCount: 1,
+          offset: 0,
+          truncated: false,
+          entries: [
+            {
+              name: "Pokemon Emerald.gba",
+              path: "Pokemon Emerald.gba",
+              type: "file",
+              size: 1024,
+              modified: 1_700_000_000,
+              status: "",
+              thumbnailPath: "",
+            },
+          ],
+        }}
+        scope="files"
+        search="Pokemon"
+        transfer={{ active: false, label: "", progress: 0 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Pokemon Emerald.gba" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move Selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open folder Archives" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Move Here" }));
+
+    expect(mockApi.getBrowserAll).toHaveBeenNthCalledWith(1, "files", "csrf-token", undefined, undefined);
+    expect(onMoveSelection).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          name: "Pokemon Emerald.gba",
+          path: "Pokemon Emerald.gba",
+        }),
+      ],
+      "Archives",
+    );
+  });
+
   it("disables bulk download when a selected folder is included", () => {
     render(
       <BrowserView

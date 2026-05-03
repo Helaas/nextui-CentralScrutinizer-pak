@@ -81,28 +81,31 @@ function BrowserMoveModal({
   csrf,
   entries,
   initialResponse,
+  initialResponseComplete = true,
   onCancel,
   onConfirm,
 }: {
   csrf?: string | null;
   entries: BrowserEntry[];
   initialResponse: BrowserResponse;
+  initialResponseComplete?: boolean;
   onCancel: () => void;
   onConfirm: (destinationPath: string) => void;
 }) {
   const initialPath = getParentBrowserPath(normalizeBrowserPath(initialResponse.path));
   const initialResponsePath = normalizeBrowserPath(initialResponse.path);
+  const canUseInitialResponse = initialResponseComplete && initialResponsePath === initialPath;
   const [currentPath, setCurrentPath] = useState<string | undefined>(initialPath);
   const [currentResponse, setCurrentResponse] = useState<BrowserResponse | null>(
-    initialResponsePath === initialPath ? initialResponse : null,
+    canUseInitialResponse ? initialResponse : null,
   );
-  const [loading, setLoading] = useState(initialResponsePath !== initialPath);
+  const [loading, setLoading] = useState(!canUseInitialResponse);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
 
-    if (initialResponsePath === currentPath) {
+    if (initialResponseComplete && initialResponsePath === currentPath) {
       setCurrentResponse(initialResponse);
       setLoadError(null);
       setLoading(false);
@@ -146,7 +149,7 @@ function BrowserMoveModal({
     return () => {
       active = false;
     };
-  }, [csrf, currentPath, initialResponse, initialResponsePath]);
+  }, [csrf, currentPath, initialResponse, initialResponseComplete, initialResponsePath]);
 
   const directories = currentResponse?.entries.filter((entry) => entry.type === "directory") ?? [];
   const canMoveHere = currentResponse ? canMoveEntriesToDestination(entries, currentResponse.path) : false;
@@ -339,6 +342,7 @@ export function BrowserView({
   const itemCountLabel = formatItemCount(totalCount);
   const entries = response.entries;
   const remaining = Math.max(totalCount - entries.length, 0);
+  const canReuseMoveInitialResponse = search.trim().length === 0 && !hasMore;
   const selectedEntries = entries.filter((entry) => selectedPaths.includes(entry.path));
   const allSelected = entries.length > 0 && entries.every((entry) => selectedPaths.includes(entry.path));
   const partiallySelected = selectedEntries.length > 0 && !allSelected;
@@ -699,6 +703,7 @@ export function BrowserView({
           csrf={csrf}
           entries={moveSelectionEntries}
           initialResponse={response}
+          initialResponseComplete={canReuseMoveInitialResponse}
           onCancel={() => {
             setMoveSelectionEntries(null);
           }}

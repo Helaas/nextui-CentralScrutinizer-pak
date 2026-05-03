@@ -868,34 +868,51 @@ export default function Page() {
     }
 
     await withBusy(async () => {
-      const results = await Promise.allSettled(
-        moves.map(async ({ entry, to }) =>
-          renameItem(
-            {
-              scope: scopeState.scope,
-              tag: scopeState.tag,
-              from: entry.path,
-              to,
-            },
-            csrf,
-          ),
-        ),
-      );
-      const successCount = results.filter((result) => result.status === "fulfilled").length;
-      const failureCount = moves.length - successCount;
-      const destinationLabel = normalizedDestination || "SD Card root";
+      const total = moves.length;
+      let completed = 0;
 
-      await refreshCurrentData();
-      if (failureCount === 0) {
-        setNotice(`Moved ${formatItemCount(successCount)} to ${destinationLabel}.`);
-        return;
-      }
-      if (successCount === 0) {
-        setNotice(`Failed to move ${formatItemCount(moves.length)}.`);
-        return;
-      }
+      setTransfer({ active: true, label: `Moving ${formatItemCount(total)}...`, progress: 0 });
+      try {
+        const results = await Promise.allSettled(
+          moves.map(async ({ entry, to }) => {
+            try {
+              return await renameItem(
+                {
+                  scope: scopeState.scope,
+                  tag: scopeState.tag,
+                  from: entry.path,
+                  to,
+                },
+                csrf,
+              );
+            } finally {
+              completed++;
+              setTransfer({
+                active: true,
+                label: `Moving ${completed} of ${total} item${total === 1 ? "" : "s"}...`,
+                progress: Math.round((completed / total) * 100),
+              });
+            }
+          }),
+        );
+        const successCount = results.filter((result) => result.status === "fulfilled").length;
+        const failureCount = moves.length - successCount;
+        const destinationLabel = normalizedDestination || "SD Card root";
 
-      setNotice(`Moved ${successCount} of ${moves.length} items to ${destinationLabel}. ${failureCount} failed.`);
+        await refreshCurrentData();
+        if (failureCount === 0) {
+          setNotice(`Moved ${formatItemCount(successCount)} to ${destinationLabel}.`);
+          return;
+        }
+        if (successCount === 0) {
+          setNotice(`Failed to move ${formatItemCount(moves.length)}.`);
+          return;
+        }
+
+        setNotice(`Moved ${successCount} of ${moves.length} items to ${destinationLabel}. ${failureCount} failed.`);
+      } finally {
+        clearTransfer();
+      }
     });
   };
 
@@ -975,23 +992,42 @@ export default function Page() {
     }
 
     await withBusy(async () => {
-      const results = await Promise.allSettled(
-        entries.map(async (entry) => deleteItem({ scope: scopeState.scope, tag: scopeState.tag, path: entry.path }, csrf)),
-      );
-      const successCount = results.filter((result) => result.status === "fulfilled").length;
-      const failureCount = entries.length - successCount;
+      const total = entries.length;
+      let completed = 0;
 
-      await refreshCurrentData();
-      if (failureCount === 0) {
-        setNotice(`Deleted ${formatItemCount(successCount)}.`);
-        return;
-      }
-      if (successCount === 0) {
-        setNotice(`Failed to delete ${formatItemCount(entries.length)}.`);
-        return;
-      }
+      setTransfer({ active: true, label: `Deleting ${formatItemCount(total)}...`, progress: 0 });
+      try {
+        const results = await Promise.allSettled(
+          entries.map(async (entry) => {
+            try {
+              return await deleteItem({ scope: scopeState.scope, tag: scopeState.tag, path: entry.path }, csrf);
+            } finally {
+              completed++;
+              setTransfer({
+                active: true,
+                label: `Deleting ${completed} of ${total} item${total === 1 ? "" : "s"}...`,
+                progress: Math.round((completed / total) * 100),
+              });
+            }
+          }),
+        );
+        const successCount = results.filter((result) => result.status === "fulfilled").length;
+        const failureCount = total - successCount;
 
-      setNotice(`Deleted ${successCount} of ${entries.length} items. ${failureCount} failed.`);
+        await refreshCurrentData();
+        if (failureCount === 0) {
+          setNotice(`Deleted ${formatItemCount(successCount)}.`);
+          return;
+        }
+        if (successCount === 0) {
+          setNotice(`Failed to delete ${formatItemCount(total)}.`);
+          return;
+        }
+
+        setNotice(`Deleted ${successCount} of ${total} items. ${failureCount} failed.`);
+      } finally {
+        clearTransfer();
+      }
     });
   };
 
