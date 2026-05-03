@@ -796,6 +796,72 @@ describe("Page", () => {
     );
   });
 
+  it("shows delete progress while bulk file deletes are pending", async () => {
+    const resolveDeletes: Array<() => void> = [];
+
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser
+      .mockResolvedValueOnce(
+        fileBrowserResponse([
+          {
+            name: "Saves",
+            path: "Saves",
+            type: "directory",
+            size: 0,
+            modified: 1_700_000_000,
+            status: "",
+            thumbnailPath: "",
+          },
+          {
+            name: "Imports",
+            path: "Imports",
+            type: "directory",
+            size: 0,
+            modified: 1_700_000_100,
+            status: "",
+            thumbnailPath: "",
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(fileBrowserResponse());
+    mockApi.deleteItem.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveDeletes.push(resolve);
+        }),
+    );
+
+    render(<Page />);
+
+    await openFileBrowserTool();
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select Saves" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Imports" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Selected" }));
+
+    expect(await screen.findByText("Deleting 2 items...")).toBeTruthy();
+    expect(screen.getByText("0%")).toBeTruthy();
+
+    await waitFor(() => {
+      expect(mockApi.deleteItem).toHaveBeenCalledTimes(2);
+    });
+
+    await act(async () => {
+      resolveDeletes[0]?.();
+    });
+
+    expect(await screen.findByText("Deleting 1 of 2 items...")).toBeTruthy();
+    expect(screen.getByText("50%")).toBeTruthy();
+
+    await act(async () => {
+      resolveDeletes[1]?.();
+    });
+
+    expect(await screen.findByText("Deleted 2 items.")).toBeTruthy();
+    expect(mockApi.getBrowser).toHaveBeenCalledTimes(2);
+  });
+
   it("renames a files entry through the inline rename action from the tool workspace", async () => {
     vi.spyOn(window, "prompt").mockReturnValue("Archives");
     mockApi.getSession.mockResolvedValue(pairedSession());

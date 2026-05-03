@@ -547,6 +547,9 @@ cs_browser_list_status cs_browser_list(const cs_paths *paths,
     }
 
     memset(result, 0, sizeof(*result));
+    /* Echo the requested offset even when it is past the end; the page is then
+     * intentionally empty while total_count still reports the matched entries.
+     */
     result->offset = offset;
     if (CS_SAFE_SNPRINTF(result->scope, sizeof(result->scope), "%s", cs_browser_scope_name(scope)) != 0
         || CS_SAFE_SNPRINTF(result->root_path, sizeof(result->root_path), "%s", root) != 0
@@ -601,6 +604,9 @@ cs_browser_list_status cs_browser_list(const cs_paths *paths,
         root_fd = -1;
     }
 
+    /* Keep the capped sort buffer off the stack; CS_BROWSER_SCAN_CAP entries
+     * are roughly 1 MiB on the target builds.
+     */
     sort_buf = (cs_browser_sort_entry *) calloc(CS_BROWSER_SCAN_CAP, sizeof(*sort_buf));
     if (!sort_buf) {
         (void) closedir(dir);
