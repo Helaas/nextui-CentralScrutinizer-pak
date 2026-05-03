@@ -145,7 +145,7 @@ export function useBrowserPagination(params: BrowserPaginationParams): BrowserPa
       try {
         const response = await fetchPage(entries.length, controller.signal);
 
-        if (seq !== requestSeqRef.current || !response) {
+        if (seq !== requestSeqRef.current || loadMoreControllerRef.current !== controller || !response) {
           return;
         }
 

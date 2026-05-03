@@ -73,6 +73,15 @@ function Harness({
       </button>
       <button
         onClick={() => {
+          browser.loadMore();
+          browser.loadMore();
+        }}
+        type="button"
+      >
+        Load more twice
+      </button>
+      <button
+        onClick={() => {
           void browser.refresh();
         }}
         type="button"
@@ -121,6 +130,43 @@ describe("useBrowserPagination", () => {
 
     expect(screen.getByTestId("loading-more").textContent).toBe("false");
     expect(screen.getByTestId("entries").textContent).toBe("fresh.png");
+  });
+
+  it("ignores a stale load-more response after a newer page request supersedes it", async () => {
+    const staleLoadMore = deferred<BrowserResponse>();
+    const activeLoadMore = deferred<BrowserResponse>();
+
+    mockApi.getBrowser
+      .mockResolvedValueOnce(browserResponse([entry("first.png")], 3))
+      .mockReturnValueOnce(staleLoadMore.promise)
+      .mockReturnValueOnce(activeLoadMore.promise);
+
+    render(<Harness />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("entries").textContent).toBe("first.png");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more twice" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("loading-more").textContent).toBe("true");
+    });
+
+    await act(async () => {
+      staleLoadMore.resolve(browserResponse([entry("stale.png")], 3, 1));
+      await staleLoadMore.promise;
+    });
+
+    expect(screen.getByTestId("entries").textContent).toBe("first.png");
+    expect(screen.getByTestId("loading-more").textContent).toBe("true");
+
+    await act(async () => {
+      activeLoadMore.resolve(browserResponse([entry("active.png")], 2, 1));
+      await activeLoadMore.promise;
+    });
+
+    expect(screen.getByTestId("entries").textContent).toBe("first.png,active.png");
+    expect(screen.getByTestId("loading-more").textContent).toBe("false");
   });
 
   it("invalidates in-flight load-more responses when disabled", async () => {
