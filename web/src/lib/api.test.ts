@@ -806,6 +806,44 @@ describe("beginUploadFilesBatched", () => {
       errorMessage: "Upload failed",
     });
   });
+
+  it("counts files before a reported batch conflict as uploaded", async () => {
+    const files = Array.from({ length: UPLOAD_BATCH_SIZE + 3 }, (_, i) =>
+      new File(["x"], `file-${i}.bin`),
+    );
+    let sendCount = 0;
+
+    class ConflictingSecondBatchXhr extends MockXhr {
+      send(body: FormData) {
+        sendCount += 1;
+        if (sendCount === 2) {
+          this.status = 409;
+          this.responseText = `{"error":"upload_conflict","path":"Imports/file-${UPLOAD_BATCH_SIZE + 1}.bin"}`;
+          this.body = body;
+          this.uploadListener?.({ lengthComputable: true, loaded: 0, total: 10 });
+          this.listeners.load?.();
+          return;
+        }
+        super.send(body);
+      }
+    }
+
+    vi.stubGlobal("XMLHttpRequest", ConflictingSecondBatchXhr as unknown as typeof XMLHttpRequest);
+
+    const summary = await beginUploadFilesBatched(
+      { scope: "files", path: "Imports", files },
+      "csrf-token",
+    ).promise;
+
+    expect(summary).toEqual({
+      uploaded: UPLOAD_BATCH_SIZE + 1,
+      failed: 2,
+      directoriesCreated: 0,
+      directoriesFailed: 0,
+      cancelled: false,
+      errorMessage: `Upload blocked because "Imports/file-${UPLOAD_BATCH_SIZE + 1}.bin" already exists.`,
+    });
+  });
 });
 
 describe("replaceArt", () => {

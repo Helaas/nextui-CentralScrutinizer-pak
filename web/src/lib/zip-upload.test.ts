@@ -317,5 +317,46 @@ describe("uploadSelectionFromZip", () => {
     expect(uploadPaths.directories).toEqual(["favorites", "favorites/Empty", "favorites/GBA"]);
     expect(uploadPaths.explicitDirectories).toEqual(["favorites/Empty"]);
     expect(uploadPaths.filePaths).toEqual(["favorites/GBA/Pokemon Emerald.gba"]);
+    expect(uploadPaths.internalConflicts).toEqual([]);
+  });
+
+  it("reports explicit ZIP directory and file entries with the same upload path", () => {
+    const uploadPaths = uploadPathsFromZip(
+      {
+        archiveFileName: "conflict.zip",
+        commonRoot: "Root",
+        entries: [
+          { kind: "directory", path: "Root/foo", zipObject: {} as JSZip.JSZipObject },
+          { kind: "file", path: "Root/foo", zipObject: {} as JSZip.JSZipObject },
+        ],
+        totalDirectories: 1,
+        totalFiles: 1,
+        totalUncompressedBytes: 1,
+        zipNameWithoutExtension: "conflict",
+      },
+      "extract-here",
+    );
+
+    expect(uploadPaths.internalConflicts).toEqual([{ kind: "file-over-directory", path: "foo" }]);
+  });
+
+  it("reports ZIP files that need a folder where another file lands", () => {
+    const uploadPaths = uploadPathsFromZip(
+      {
+        archiveFileName: "conflict.zip",
+        commonRoot: "Root",
+        entries: [
+          { kind: "file", path: "Root/foo", zipObject: {} as JSZip.JSZipObject },
+          { kind: "file", path: "Root/foo/bar.txt", zipObject: {} as JSZip.JSZipObject },
+        ],
+        totalDirectories: 0,
+        totalFiles: 2,
+        totalUncompressedBytes: 2,
+        zipNameWithoutExtension: "conflict",
+      },
+      "extract-here",
+    );
+
+    expect(uploadPaths.internalConflicts).toEqual([{ kind: "directory-over-file", path: "foo" }]);
   });
 });

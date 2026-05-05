@@ -65,6 +65,7 @@ import type {
   PlatformResource,
   SessionResponse,
   TransferState,
+  UploadPreviewConflict,
   UploadPreviewResponse,
   UploadSelection,
   ZipExtractOptions,
@@ -72,6 +73,7 @@ import type {
 
 type DirectoryCapableInput = HTMLInputElement & { webkitdirectory?: boolean };
 const ZIP_PREVIEW_TIMEOUT_MS = 15_000;
+const ZIP_CONFLICT_DISPLAY_LIMIT = 5;
 
 function getInitialView(): AppViewState {
   if (typeof window === "undefined") {
@@ -158,6 +160,15 @@ function formatUploadParts(files: number, directories: number): string {
 
 function formatItemCount(count: number): string {
   return `${count} item${count === 1 ? "" : "s"}`;
+}
+
+function zipInternalConflictsToPreflight(conflicts: UploadPreviewConflict[]): UploadPreviewResponse {
+  return {
+    blocking: conflicts.slice(0, ZIP_CONFLICT_DISPLAY_LIMIT),
+    blockingCount: conflicts.length,
+    overwriteable: [],
+    overwriteableCount: 0,
+  };
 }
 
 function normalizeSession(
@@ -858,6 +869,21 @@ export default function Page() {
 
     const { preview } = zipExtractDialog;
     const uploadPaths = uploadPathsFromZip(preview, strategy);
+
+    if (uploadPaths.internalConflicts.length > 0) {
+      setZipExtractDialog((current) =>
+        current
+          ? {
+              ...current,
+              strategy,
+              overwriteExisting,
+              checking: false,
+              preflight: zipInternalConflictsToPreflight(uploadPaths.internalConflicts),
+            }
+          : current,
+      );
+      return;
+    }
 
     if (uploadPaths.filePaths.length === 0 && uploadPaths.directories.length === 0) {
       setNotice("ZIP contains no uploadable files or folders.");

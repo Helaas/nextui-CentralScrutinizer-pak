@@ -178,8 +178,8 @@ export function ZipExtractDialog({
                 </div>
               </div>
               <div className="mt-2 space-y-0.5 pl-7">
-                {option.previewPaths.map((path) => (
-                  <p key={path} className="truncate font-mono text-xs text-[var(--muted)]">
+                {option.previewPaths.map((path, pathIndex) => (
+                  <p key={`${path}:${pathIndex}`} className="truncate font-mono text-xs text-[var(--muted)]">
                     {path}
                   </p>
                 ))}

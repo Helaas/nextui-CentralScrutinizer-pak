@@ -1299,6 +1299,37 @@ describe("Page", () => {
     expect(mockApi.beginUploadFilesBatched).not.toHaveBeenCalled();
   });
 
+  it("blocks ZIP-internal file and folder conflicts before preflight", async () => {
+    const zipFile = new File(["zip"], "Archive.zip", { type: "application/zip" });
+
+    mockZipUpload.parseZipFile.mockResolvedValue(
+      makeZipPreview({
+        entries: [
+          { kind: "directory", path: "Root/foo", zipObject: {} },
+          { kind: "file", path: "Root/foo", zipObject: {} },
+        ],
+        totalDirectories: 1,
+        totalFiles: 1,
+      }),
+    );
+    mockZipPicker(zipFile);
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser.mockResolvedValue(fileBrowserResponse());
+
+    render(<Page />);
+
+    await openFileBrowserTool();
+    fireEvent.click(await screen.findByRole("button", { name: "Upload ZIP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Extract" }));
+
+    await screen.findByText("Some paths need attention before extraction can continue.");
+    expect(screen.getByText("File needed but a folder already exists: Archive/foo")).toBeTruthy();
+    expect(mockApi.previewUploadBatched).not.toHaveBeenCalled();
+    expect(mockZipUpload.uploadSelectionFromZip).not.toHaveBeenCalled();
+    expect(mockApi.beginUploadFilesBatched).not.toHaveBeenCalled();
+  });
+
   it("requires overwrite approval, then re-runs preflight and uploads", async () => {
     const zipFile = new File(["zip"], "Archive.zip", { type: "application/zip" });
     const extractedFile = makeZipExtractedFile();

@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 
-import type { ExtractStrategy, UploadSelection } from "./types";
+import type { ExtractStrategy, UploadPreviewConflict, UploadSelection } from "./types";
 
 export type ParsedZipEntry = {
   kind: "directory" | "file";
@@ -406,13 +406,27 @@ export type ZipUploadPaths = {
   directories: string[];
   explicitDirectories: string[];
   filePaths: string[];
+  internalConflicts: UploadPreviewConflict[];
 };
+
+function recordInternalConflict(conflicts: UploadPreviewConflict[], seen: Set<string>, conflict: UploadPreviewConflict) {
+  const key = `${conflict.kind}:${conflict.path}`;
+
+  if (seen.has(key)) {
+    return;
+  }
+
+  seen.add(key);
+  conflicts.push(conflict);
+}
 
 export function uploadPathsFromZip(preview: ParsedZipPreview, strategy: ExtractStrategy): ZipUploadPaths {
   const { entries, commonRoot, zipNameWithoutExtension } = preview;
   const directories = new Set<string>();
   const archiveDirectories = new Set<string>();
   const filePaths: string[] = [];
+  const internalConflicts: UploadPreviewConflict[] = [];
+  const seenInternalConflicts = new Set<string>();
 
   for (const entry of entries) {
     const uploadPath = computeUploadPath(entry.path, { commonRoot, zipNameWithoutExtension }, strategy);
@@ -431,6 +445,18 @@ export function uploadPathsFromZip(preview: ParsedZipPreview, strategy: ExtractS
     filePaths.push(uploadPath);
   }
 
+  const filePathSet = new Set(filePaths);
+  for (const directory of directories) {
+    if (!filePathSet.has(directory)) {
+      continue;
+    }
+
+    recordInternalConflict(internalConflicts, seenInternalConflicts, {
+      kind: archiveDirectories.has(directory) ? "file-over-directory" : "directory-over-file",
+      path: directory,
+    });
+  }
+
   const explicitDirectories = Array.from(archiveDirectories).filter(
     (directory) => !filePaths.some((filePath) => filePath.startsWith(`${directory}/`)),
   );
@@ -439,6 +465,7 @@ export function uploadPathsFromZip(preview: ParsedZipPreview, strategy: ExtractS
     directories: Array.from(directories),
     explicitDirectories,
     filePaths,
+    internalConflicts,
   };
 }
 

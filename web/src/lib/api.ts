@@ -20,13 +20,15 @@ import type {
 
 export class ApiError extends Error {
   code?: string;
+  path?: string;
   status: number;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, path?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.path = path;
   }
 }
 
@@ -127,13 +129,19 @@ async function readErrorCode(response: Response): Promise<string | undefined> {
 function parseUploadError(xhr: XMLHttpRequest): Error {
   try {
     const body = JSON.parse(xhr.responseText) as { error?: string; path?: string };
-    const pathLabel = typeof body.path === "string" && body.path.length > 0 ? ` "${body.path}"` : "";
+    const errorPath = typeof body.path === "string" && body.path.length > 0 ? body.path : undefined;
+    const pathLabel = errorPath ? ` "${errorPath}"` : "";
 
     if (body.error === "upload_conflict") {
-      return new ApiError(`Upload blocked because${pathLabel} already exists.`, xhr.status, body.error);
+      return new ApiError(`Upload blocked because${pathLabel} already exists.`, xhr.status, body.error, errorPath);
     }
     if (body.error === "upload_type_conflict") {
-      return new ApiError(`Upload blocked because${pathLabel} conflicts with an existing file or folder.`, xhr.status, body.error);
+      return new ApiError(
+        `Upload blocked because${pathLabel} conflicts with an existing file or folder.`,
+        xhr.status,
+        body.error,
+        errorPath,
+      );
     }
   } catch {
     // Ignore non-JSON upload failures.
@@ -399,9 +407,7 @@ export function beginUploadFiles(
       form.append("directory", directory);
     }
     for (const file of request.files) {
-      const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
-
-      form.append("file", file, relativePath && relativePath.length > 0 ? relativePath : file.name);
+      form.append("file", file, uploadFileClientPath(file));
     }
 
     xhr.open("POST", "/api/upload");
@@ -432,6 +438,30 @@ export function beginUploadFiles(
 }
 
 export const UPLOAD_BATCH_SIZE = 32;
+
+function uploadFileClientPath(file: File): string {
+  const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
+
+  return relativePath && relativePath.length > 0 ? relativePath : file.name;
+}
+
+function joinUploadPath(base: string | undefined, child: string): string {
+  if (base && child) {
+    return `${base}/${child}`;
+  }
+
+  return base || child;
+}
+
+function uploadedBeforeConflict(batch: File[], basePath: string | undefined, error: unknown): number | null {
+  if (!(error instanceof ApiError) || !error.path) {
+    return null;
+  }
+
+  const conflictIndex = batch.findIndex((file) => joinUploadPath(basePath, uploadFileClientPath(file)) === error.path);
+
+  return conflictIndex >= 0 ? conflictIndex : null;
+}
 
 export async function uploadFiles(
   request: UploadRequest,
@@ -527,7 +557,14 @@ export function beginUploadFilesBatched(
         if (error instanceof UploadAbortedError) {
           cancelled = true;
         } else {
-          failed += batch.length;
+          const partialUploaded = uploadedBeforeConflict(batch, rest.path, error);
+
+          if (partialUploaded === null) {
+            failed += batch.length;
+          } else {
+            uploaded += partialUploaded;
+            failed += batch.length - partialUploaded;
+          }
           errorMessage = error instanceof Error ? error.message : errorMessage;
         }
       } finally {
