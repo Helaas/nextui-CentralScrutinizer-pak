@@ -85,7 +85,7 @@ export function FileEditorModal({
               Cancel
             </button>
             <button
-              className="rounded-md border border-[var(--accent)] bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-black transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-[var(--accent)] bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={loading || saving || overLimit || !!loadError}
               onClick={() => onSave(value)}
               type="button"

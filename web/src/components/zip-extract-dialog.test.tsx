@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import JSZip from "jszip";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -25,6 +28,7 @@ function makePreview(overrides: Partial<ParsedZipPreview> = {}): ParsedZipPrevie
 
 function renderDialog(overrides: Partial<{
   strategy: ExtractStrategy;
+  preview: ParsedZipPreview;
   overwriteExisting: boolean;
   conflicts: UploadPreviewResponse | null;
   checking: boolean;
@@ -112,6 +116,102 @@ describe("ZipExtractDialog", () => {
     expect(screen.getByText("archive/game.gba")).toBeTruthy();
     expect(screen.getByText("Root/Empty")).toBeTruthy();
     expect(screen.getByText("Root/game.gba")).toBeTruthy();
+  });
+
+  it("hides later ZIP strategies that resolve to duplicate upload paths", () => {
+    renderDialog({
+      preview: makePreview({
+        commonRoot: null,
+        entries: [
+          { kind: "directory", path: "Emus", zipObject: {} as unknown as JSZip.JSZipObject },
+          { kind: "directory", path: "Emus/tg5040", zipObject: {} as unknown as JSZip.JSZipObject },
+          { kind: "file", path: "Emus/tg5040/DOS.pak/default.cfg", zipObject: {} as unknown as JSZip.JSZipObject },
+        ],
+        totalDirectories: 2,
+        totalFiles: 1,
+        zipNameWithoutExtension: "minui-dosbox-pure-pak",
+      }),
+    });
+
+    expect(screen.getByRole("radio", { name: /Extract here/ })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /Extract into folder/ })).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: /Preserve full archive path/ })).toBeNull();
+  });
+
+  it("keeps Preserve full archive path when it uploads to distinct paths", () => {
+    renderDialog({
+      preview: makePreview({
+        archiveFileName: "Central.Scrutinizer.pakz",
+        commonRoot: "Tools",
+        entries: [
+          { kind: "directory", path: "Tools", zipObject: {} as unknown as JSZip.JSZipObject },
+          { kind: "directory", path: "Tools/my355", zipObject: {} as unknown as JSZip.JSZipObject },
+          {
+            kind: "file",
+            path: "Tools/my355/Central Scrutinizer.pak/launch.sh",
+            zipObject: {} as unknown as JSZip.JSZipObject,
+          },
+        ],
+        totalDirectories: 2,
+        totalFiles: 1,
+        zipNameWithoutExtension: "Central.Scrutinizer",
+      }),
+    });
+
+    expect(screen.getByRole("radio", { name: /Preserve full archive path/ })).toBeTruthy();
+    expect(screen.getByText("Tools/my355/Central Scrutinizer.pak/launch.sh")).toBeTruthy();
+  });
+
+  it("canonicalizes a hidden duplicate strategy before confirming", () => {
+    const onConfirm = vi.fn();
+
+    renderDialog({
+      onConfirm,
+      preview: makePreview({
+        commonRoot: null,
+        entries: [
+          { kind: "directory", path: "Emus", zipObject: {} as unknown as JSZip.JSZipObject },
+          { kind: "file", path: "Emus/tg5040/DOS.pak/default.cfg", zipObject: {} as unknown as JSZip.JSZipObject },
+        ],
+        totalDirectories: 1,
+        totalFiles: 1,
+      }),
+      strategy: "preserve-full-path",
+    });
+
+    const extractHere = screen.getByRole("radio", { name: /Extract here/ }) as HTMLInputElement;
+
+    expect(extractHere.checked).toBe(true);
+    expect(screen.queryByRole("radio", { name: /Preserve full archive path/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Extract" }));
+
+    expect(onConfirm).toHaveBeenCalledWith({ strategy: "extract-here", overwriteExisting: false });
+  });
+
+  it("uses the app's primary and secondary button colors", () => {
+    renderDialog();
+
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    const extract = screen.getByRole("button", { name: "Extract" });
+
+    expect(cancel.className).toContain("bg-[var(--panel-alt)]");
+    expect(cancel.className).toContain("text-[var(--text)]");
+    expect(extract.className).toContain("text-white");
+    expect(extract.className).not.toContain("text-black");
+  });
+
+  it("does not leave production component buttons using black text on accent backgrounds", () => {
+    const componentsDir = path.join(process.cwd(), "src/components");
+    const sourceFiles = readdirSync(componentsDir).filter(
+      (fileName) => fileName.endsWith(".tsx") && !fileName.endsWith(".test.tsx"),
+    );
+
+    for (const sourceFile of sourceFiles) {
+      const source = readFileSync(path.join(componentsDir, sourceFile), "utf8");
+
+      expect(source, sourceFile).not.toContain("text-black");
+    }
   });
 
   it("shows conflict summaries and overwrite guidance", () => {

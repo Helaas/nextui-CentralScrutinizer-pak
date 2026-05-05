@@ -252,7 +252,7 @@ export function CollectionsToolView({
           </p>
         </div>
         <button
-          className="rounded-md border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!csrf}
           onClick={() => {
             void createCollection();

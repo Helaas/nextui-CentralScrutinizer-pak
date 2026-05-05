@@ -230,7 +230,7 @@ export function CollectionEditorModal({
               Add ROMs
             </button>
             <button
-              className="rounded-md border border-[var(--accent)] bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-[var(--accent)] bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!dirty || saving || !csrf}
               onClick={() => {
                 void saveCollection();
@@ -319,7 +319,7 @@ export function CollectionEditorModal({
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  className="rounded-md border border-[var(--accent)] bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-md border border-[var(--accent)] bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={selectedPaths.length === 0}
                   onClick={addSelectedRoms}
                   type="button"

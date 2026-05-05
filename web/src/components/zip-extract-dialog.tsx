@@ -1,7 +1,16 @@
-import { computeUploadPath, type ParsedZipPreview } from "../lib/zip-upload";
+import { computeUploadPath, type ParsedZipPreview, uploadPathsFromZip } from "../lib/zip-upload";
 import type { ExtractStrategy, UploadPreviewConflict, UploadPreviewResponse, ZipExtractOptions } from "../lib/types";
 
 const PREVIEW_LIMIT = 5;
+const STRATEGY_ORDER: ExtractStrategy[] = ["extract-here", "extract-into-folder", "preserve-full-path"];
+
+type ZipExtractOption = {
+  description: string;
+  previewPaths: string[];
+  signature: string;
+  strategy: ExtractStrategy;
+  title: string;
+};
 
 function getPreviewPaths(preview: ParsedZipPreview, strategy: ExtractStrategy): string[] {
   return preview.entries
@@ -19,6 +28,73 @@ function describeConflict(conflict: UploadPreviewConflict): string {
   }
 
   return `Existing file would be replaced: ${conflict.path}`;
+}
+
+function getUploadSignature(preview: ParsedZipPreview, strategy: ExtractStrategy): string {
+  const { directories, filePaths } = uploadPathsFromZip(preview, strategy);
+  const directoryKeys = directories.map((path) => `d:${path}`).sort();
+  const fileKeys = filePaths.map((path) => `f:${path}`).sort();
+
+  return [...directoryKeys, ...fileKeys].join("\n");
+}
+
+function getStrategyTitle(strategy: ExtractStrategy, wrapperName: string): string {
+  if (strategy === "extract-here") {
+    return "Extract here";
+  }
+  if (strategy === "extract-into-folder") {
+    return `Extract into folder "${wrapperName}"`;
+  }
+
+  return "Preserve full archive path";
+}
+
+function getStrategyDescription(strategy: ExtractStrategy): string {
+  if (strategy === "extract-here") {
+    return "Place files directly in the current folder";
+  }
+  if (strategy === "extract-into-folder") {
+    return "Wrap contents under a new folder named after the archive";
+  }
+
+  return "Keep top-level folders like Tools/ exactly as stored in the archive";
+}
+
+function getVisibleOptions(preview: ParsedZipPreview): ZipExtractOption[] {
+  const seenSignatures = new Set<string>();
+  const options = STRATEGY_ORDER.map((strategy) => {
+    const signature = getUploadSignature(preview, strategy);
+
+    return {
+      description: getStrategyDescription(strategy),
+      previewPaths: getPreviewPaths(preview, strategy),
+      signature,
+      strategy,
+      title: getStrategyTitle(strategy, preview.zipNameWithoutExtension),
+    };
+  });
+
+  return options.filter((option) => {
+    if (seenSignatures.has(option.signature)) {
+      return false;
+    }
+
+    seenSignatures.add(option.signature);
+    return true;
+  });
+}
+
+function getCanonicalStrategy(preview: ParsedZipPreview, visibleOptions: ZipExtractOption[], strategy: ExtractStrategy): ExtractStrategy {
+  const visibleStrategy = visibleOptions.find((option) => option.strategy === strategy);
+
+  if (visibleStrategy) {
+    return visibleStrategy.strategy;
+  }
+
+  const currentSignature = getUploadSignature(preview, strategy);
+  const duplicateOption = visibleOptions.find((option) => option.signature === currentSignature);
+
+  return duplicateOption?.strategy ?? visibleOptions[0]?.strategy ?? strategy;
 }
 
 type ZipExtractDialogProps = {
@@ -44,11 +120,9 @@ export function ZipExtractDialog({
   onCancel,
   onConfirm,
 }: ZipExtractDialogProps) {
-  const herePreview = getPreviewPaths(preview, "extract-here");
-  const folderPreview = getPreviewPaths(preview, "extract-into-folder");
-  const preservePreview = getPreviewPaths(preview, "preserve-full-path");
+  const visibleOptions = getVisibleOptions(preview);
+  const selectedStrategy = getCanonicalStrategy(preview, visibleOptions, strategy);
   const totalRemaining = Math.max(0, preview.entries.length - PREVIEW_LIMIT);
-  const wrapperName = preview.zipNameWithoutExtension;
   const overwriteableRemaining = Math.max(0, (conflicts?.overwriteableCount ?? 0) - (conflicts?.overwriteable.length ?? 0));
   const blockingRemaining = Math.max(0, (conflicts?.blockingCount ?? 0) - (conflicts?.blocking.length ?? 0));
 
@@ -80,98 +154,39 @@ export function ZipExtractDialog({
         <div className="flex-1 overflow-auto px-5 py-4">
           <p className="mb-3 text-sm text-[var(--text)]">How would you like to extract the contents?</p>
 
-          <label
-            className={`mb-3 block cursor-pointer rounded-xl border p-4 transition ${
-              strategy === "extract-here"
-                ? "border-[var(--accent)] bg-[var(--accent)]/10"
-                : "border-[var(--border)] hover:border-[var(--accent)]/30"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <input
-                checked={strategy === "extract-here"}
-                className="h-4 w-4 accent-[var(--accent)]"
-                disabled={checking}
-                name="extract-strategy"
-                onChange={() => onStrategyChange("extract-here")}
-                type="radio"
-              />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-[var(--text)]">Extract here</p>
-                <p className="text-xs text-[var(--muted)]">Place files directly in the current folder</p>
+          {visibleOptions.map((option, index) => (
+            <label
+              key={option.strategy}
+              className={`${index < visibleOptions.length - 1 ? "mb-3 " : ""}block cursor-pointer rounded-xl border p-4 transition ${
+                selectedStrategy === option.strategy
+                  ? "border-[var(--accent)] bg-[var(--accent)]/10"
+                  : "border-[var(--border)] hover:border-[var(--accent)]/30"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <input
+                  checked={selectedStrategy === option.strategy}
+                  className="h-4 w-4 accent-[var(--accent)]"
+                  disabled={checking}
+                  name="extract-strategy"
+                  onChange={() => onStrategyChange(option.strategy)}
+                  type="radio"
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-[var(--text)]">{option.title}</p>
+                  <p className="text-xs text-[var(--muted)]">{option.description}</p>
+                </div>
               </div>
-            </div>
-            <div className="mt-2 space-y-0.5 pl-7">
-              {herePreview.map((path) => (
-                <p key={path} className="truncate font-mono text-xs text-[var(--muted)]">
-                  {path}
-                </p>
-              ))}
-              {totalRemaining > 0 ? <p className="text-xs text-[var(--muted)]">...and {totalRemaining} more</p> : null}
-            </div>
-          </label>
-
-          <label
-            className={`mb-3 block cursor-pointer rounded-xl border p-4 transition ${
-              strategy === "extract-into-folder"
-                ? "border-[var(--accent)] bg-[var(--accent)]/10"
-                : "border-[var(--border)] hover:border-[var(--accent)]/30"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <input
-                checked={strategy === "extract-into-folder"}
-                className="h-4 w-4 accent-[var(--accent)]"
-                disabled={checking}
-                name="extract-strategy"
-                onChange={() => onStrategyChange("extract-into-folder")}
-                type="radio"
-              />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-[var(--text)]">Extract into folder &quot;{wrapperName}&quot;</p>
-                <p className="text-xs text-[var(--muted)]">Wrap contents under a new folder named after the archive</p>
+              <div className="mt-2 space-y-0.5 pl-7">
+                {option.previewPaths.map((path) => (
+                  <p key={path} className="truncate font-mono text-xs text-[var(--muted)]">
+                    {path}
+                  </p>
+                ))}
+                {totalRemaining > 0 ? <p className="text-xs text-[var(--muted)]">...and {totalRemaining} more</p> : null}
               </div>
-            </div>
-            <div className="mt-2 space-y-0.5 pl-7">
-              {folderPreview.map((path) => (
-                <p key={path} className="truncate font-mono text-xs text-[var(--muted)]">
-                  {path}
-                </p>
-              ))}
-              {totalRemaining > 0 ? <p className="text-xs text-[var(--muted)]">...and {totalRemaining} more</p> : null}
-            </div>
-          </label>
-
-          <label
-            className={`block cursor-pointer rounded-xl border p-4 transition ${
-              strategy === "preserve-full-path"
-                ? "border-[var(--accent)] bg-[var(--accent)]/10"
-                : "border-[var(--border)] hover:border-[var(--accent)]/30"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <input
-                checked={strategy === "preserve-full-path"}
-                className="h-4 w-4 accent-[var(--accent)]"
-                disabled={checking}
-                name="extract-strategy"
-                onChange={() => onStrategyChange("preserve-full-path")}
-                type="radio"
-              />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-[var(--text)]">Preserve full archive path</p>
-                <p className="text-xs text-[var(--muted)]">Keep top-level folders like Tools/ exactly as stored in the archive</p>
-              </div>
-            </div>
-            <div className="mt-2 space-y-0.5 pl-7">
-              {preservePreview.map((path) => (
-                <p key={path} className="truncate font-mono text-xs text-[var(--muted)]">
-                  {path}
-                </p>
-              ))}
-              {totalRemaining > 0 ? <p className="text-xs text-[var(--muted)]">...and {totalRemaining} more</p> : null}
-            </div>
-          </label>
+            </label>
+          ))}
 
           <label className="mt-4 flex items-start gap-3 rounded-xl border border-[var(--border)] p-4">
             <input
@@ -261,16 +276,16 @@ export function ZipExtractDialog({
 
         <div className="flex flex-col gap-2 border-t border-[var(--line)] px-5 py-4 sm:flex-row sm:items-center sm:justify-end">
           <button
-            className="rounded-md border border-[var(--border)] px-3 py-2 text-xs text-[var(--muted)] transition hover:text-[var(--text)]"
+            className="rounded-md border border-[var(--border)] bg-[var(--panel-alt)] px-3 py-2 text-xs font-medium text-[var(--text)] transition hover:border-[var(--accent)]/50 disabled:opacity-50"
             onClick={onCancel}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="rounded-md border border-[var(--accent)] bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-black transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"
+            className="rounded-md border border-[var(--accent)] bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"
             disabled={checking}
-            onClick={() => onConfirm({ strategy, overwriteExisting })}
+            onClick={() => onConfirm({ strategy: selectedStrategy, overwriteExisting })}
             type="button"
           >
             {checking ? "Checking..." : "Extract"}
