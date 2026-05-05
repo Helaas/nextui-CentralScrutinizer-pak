@@ -21,11 +21,21 @@ export type ParsedZipPreview = {
 export const ZIP_MAX_ENTRIES = 50000;
 export const ZIP_MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024;
 
-type SizedZipObject = JSZip.JSZipObject & {
-  _data?: {
-    uncompressedSize?: number;
-  };
+type ZipMetadataEntry = {
+  isDirectory: boolean;
+  path: string;
+  uncompressedSize: number;
 };
+
+const ZIP_CENTRAL_DIRECTORY_FILE_HEADER_SIGNATURE = 0x02014b50;
+const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
+const ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIGNATURE = 0x07064b50;
+const ZIP64_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06064b50;
+const ZIP64_EXTRA_FIELD_HEADER_ID = 0x0001;
+const ZIP_DIRECTORY_MARKER = "/";
+const RESERVED_WINDOWS_NAME_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
+const INVALID_PATH_COMPONENT_CHARS_RE = /[\x00-\x1f\\/:*?"<>|]+/g;
+const ZIP_NAME_DECODER = new TextDecoder("utf-8");
 
 function formatBytes(bytes: number): string {
   const gib = 1024 * 1024 * 1024;
@@ -43,18 +53,19 @@ function formatBytes(bytes: number): string {
   return `${bytes.toLocaleString()} bytes`;
 }
 
-function zipObjectUncompressedSize(zipObject: JSZip.JSZipObject): number {
-  if (zipObject.dir) {
-    return 0;
+function readUint64(view: DataView, offset: number): bigint {
+  const low = BigInt(view.getUint32(offset, true));
+  const high = BigInt(view.getUint32(offset + 4, true));
+
+  return low | (high << 32n);
+}
+
+function toSafeNumber(value: bigint, label: string): number {
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`ZIP ${label} is too large to inspect safely.`);
   }
 
-  const size = (zipObject as SizedZipObject)._data?.uncompressedSize;
-
-  if (typeof size !== "number" || !Number.isFinite(size) || size < 0) {
-    throw new Error(`ZIP entry size could not be read for ${zipObject.name}.`);
-  }
-
-  return size;
+  return Number(value);
 }
 
 function normalizeArchivePath(path: string, isDirectory: boolean): string {
@@ -72,11 +83,20 @@ function normalizeArchivePath(path: string, isDirectory: boolean): string {
 
 export function archiveRootFromFileName(name: string): string {
   const withoutExtension = name.replace(/\.(zip|pakz)$/i, "").trim();
-  const normalized = withoutExtension
+  let normalized = withoutExtension
     .replace(/[\\/]+/g, "-")
-    .replace(/[\x00-\x1f]/g, "-")
-    .replace(/[ .]+$/g, "")
-    .trim();
+    .replace(INVALID_PATH_COMPONENT_CHARS_RE, "-")
+    .replace(/-+/g, "-")
+    .trim()
+    .replace(/^-+/g, "")
+    .replace(/[ .-]+$/g, "");
+
+  if (normalized === "." || normalized === "..") {
+    normalized = "";
+  }
+  if (RESERVED_WINDOWS_NAME_RE.test(normalized)) {
+    normalized = `archive-${normalized}`;
+  }
 
   return normalized || "Archive";
 }
@@ -144,6 +164,183 @@ function addParentDirectories(path: string, directories: Set<string>) {
   }
 }
 
+async function readFileArrayBuffer(file: File): Promise<ArrayBuffer> {
+  const arrayBuffer = (file as File & { arrayBuffer?: () => Promise<ArrayBuffer> }).arrayBuffer;
+
+  if (typeof arrayBuffer === "function") {
+    return arrayBuffer.call(file);
+  }
+
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onerror = () => {
+      reject(reader.error ?? new Error("ZIP file could not be read."));
+    };
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("ZIP file could not be read."));
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function findEndOfCentralDirectory(view: DataView): number {
+  const minimumLength = 22;
+
+  if (view.byteLength < minimumLength) {
+    throw new Error("ZIP central directory could not be read.");
+  }
+
+  const searchStart = Math.max(0, view.byteLength - (0xffff + minimumLength));
+
+  for (let offset = view.byteLength - minimumLength; offset >= searchStart; offset -= 1) {
+    if (view.getUint32(offset, true) !== ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE) {
+      continue;
+    }
+
+    const commentLength = view.getUint16(offset + 20, true);
+
+    if (offset + minimumLength + commentLength === view.byteLength) {
+      return offset;
+    }
+  }
+
+  throw new Error("ZIP central directory could not be read.");
+}
+
+function readZip64CentralDirectory(view: DataView, eocdOffset: number): {
+  centralDirectoryOffset: number;
+  centralDirectorySize: number;
+  totalEntries: number;
+} {
+  const locatorOffset = eocdOffset - 20;
+
+  if (locatorOffset < 0 || view.getUint32(locatorOffset, true) !== ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIGNATURE) {
+    throw new Error("ZIP central directory could not be read.");
+  }
+
+  const zip64EocdOffset = toSafeNumber(readUint64(view, locatorOffset + 8), "metadata");
+
+  if (zip64EocdOffset < 0 || zip64EocdOffset + 56 > view.byteLength) {
+    throw new Error("ZIP central directory could not be read.");
+  }
+  if (view.getUint32(zip64EocdOffset, true) !== ZIP64_END_OF_CENTRAL_DIRECTORY_SIGNATURE) {
+    throw new Error("ZIP central directory could not be read.");
+  }
+
+  return {
+    totalEntries: toSafeNumber(readUint64(view, zip64EocdOffset + 32), "entry count"),
+    centralDirectorySize: toSafeNumber(readUint64(view, zip64EocdOffset + 40), "metadata"),
+    centralDirectoryOffset: toSafeNumber(readUint64(view, zip64EocdOffset + 48), "metadata"),
+  };
+}
+
+function readZip64EntryUncompressedSize(
+  view: DataView,
+  entryOffset: number,
+  extraFieldOffset: number,
+  extraFieldLength: number,
+): number {
+  const extraFieldEnd = extraFieldOffset + extraFieldLength;
+  let cursor = extraFieldOffset;
+
+  while (cursor + 4 <= extraFieldEnd) {
+    const headerId = view.getUint16(cursor, true);
+    const dataLength = view.getUint16(cursor + 2, true);
+    const dataOffset = cursor + 4;
+    const dataEnd = dataOffset + dataLength;
+
+    if (dataEnd > extraFieldEnd) {
+      break;
+    }
+    if (headerId === ZIP64_EXTRA_FIELD_HEADER_ID) {
+      if (view.getUint32(entryOffset + 24, true) === 0xffffffff) {
+        if (dataOffset + 8 > dataEnd) {
+          break;
+        }
+        return toSafeNumber(readUint64(view, dataOffset), "entry size");
+      }
+      break;
+    }
+
+    cursor = dataEnd;
+  }
+
+  throw new Error("ZIP entry size could not be read.");
+}
+
+function inspectZipArchive(buffer: ArrayBuffer): ZipMetadataEntry[] {
+  const view = new DataView(buffer);
+  const eocdOffset = findEndOfCentralDirectory(view);
+
+  let totalEntries = view.getUint16(eocdOffset + 10, true);
+  let centralDirectorySize = view.getUint32(eocdOffset + 12, true);
+  let centralDirectoryOffset = view.getUint32(eocdOffset + 16, true);
+
+  if (totalEntries === 0xffff || centralDirectorySize === 0xffffffff || centralDirectoryOffset === 0xffffffff) {
+    const zip64 = readZip64CentralDirectory(view, eocdOffset);
+
+    totalEntries = zip64.totalEntries;
+    centralDirectorySize = zip64.centralDirectorySize;
+    centralDirectoryOffset = zip64.centralDirectoryOffset;
+  }
+
+  if (centralDirectoryOffset + centralDirectorySize > view.byteLength) {
+    throw new Error("ZIP central directory could not be read.");
+  }
+
+  const entries: ZipMetadataEntry[] = [];
+  let cursor = centralDirectoryOffset;
+
+  for (let entryIndex = 0; entryIndex < totalEntries; entryIndex += 1) {
+    if (cursor + 46 > centralDirectoryOffset + centralDirectorySize) {
+      throw new Error("ZIP central directory could not be read.");
+    }
+    if (view.getUint32(cursor, true) !== ZIP_CENTRAL_DIRECTORY_FILE_HEADER_SIGNATURE) {
+      throw new Error("ZIP central directory could not be read.");
+    }
+
+    const fileNameLength = view.getUint16(cursor + 28, true);
+    const extraFieldLength = view.getUint16(cursor + 30, true);
+    const commentLength = view.getUint16(cursor + 32, true);
+    const fileNameOffset = cursor + 46;
+    const extraFieldOffset = fileNameOffset + fileNameLength;
+    const nextEntryOffset = extraFieldOffset + extraFieldLength + commentLength;
+
+    if (nextEntryOffset > centralDirectoryOffset + centralDirectorySize) {
+      throw new Error("ZIP central directory could not be read.");
+    }
+
+    const rawName = ZIP_NAME_DECODER.decode(new Uint8Array(buffer, fileNameOffset, fileNameLength));
+    const isDirectory = rawName.endsWith(ZIP_DIRECTORY_MARKER);
+    const normalized = normalizeArchivePath(rawName, isDirectory);
+
+    if (!normalized || isMacArchiveArtifact(normalized)) {
+      cursor = nextEntryOffset;
+      continue;
+    }
+
+    const uncompressedSize = isDirectory
+      ? 0
+      : view.getUint32(cursor + 24, true) === 0xffffffff
+        ? readZip64EntryUncompressedSize(view, cursor, extraFieldOffset, extraFieldLength)
+        : view.getUint32(cursor + 24, true);
+
+    entries.push({
+      isDirectory,
+      path: normalized,
+      uncompressedSize,
+    });
+    cursor = nextEntryOffset;
+  }
+
+  return entries;
+}
+
 export function computeUploadPath(
   entryPath: string,
   preview: Pick<ParsedZipPreview, "commonRoot" | "zipNameWithoutExtension">,
@@ -159,30 +356,12 @@ export function computeUploadPath(
 }
 
 export async function parseZipFile(file: File): Promise<ParsedZipPreview> {
-  const zip = await JSZip.loadAsync(file);
-  const entries: ParsedZipEntry[] = [];
-  let totalSeen = 0;
-  let totalUncompressedBytes = 0;
+  const metadataEntries = inspectZipArchive(await readFileArrayBuffer(file));
+  const totalUncompressedBytes = metadataEntries.reduce((total, entry) => total + entry.uncompressedSize, 0);
 
-  zip.forEach((relativePath, zipObject) => {
-    totalSeen += 1;
-    const normalized = normalizeArchivePath(relativePath, zipObject.dir);
-
-    if (!normalized || isMacArchiveArtifact(normalized)) {
-      return;
-    }
-
-    totalUncompressedBytes += zipObjectUncompressedSize(zipObject);
-    entries.push({
-      kind: zipObject.dir ? "directory" : "file",
-      path: normalized,
-      zipObject,
-    });
-  });
-
-  if (totalSeen > ZIP_MAX_ENTRIES) {
+  if (metadataEntries.length > ZIP_MAX_ENTRIES) {
     throw new Error(
-      `ZIP contains too many entries (${totalSeen.toLocaleString()}). Limit is ${ZIP_MAX_ENTRIES.toLocaleString()}.`,
+      `ZIP contains too many entries (${metadataEntries.length.toLocaleString()}). Limit is ${ZIP_MAX_ENTRIES.toLocaleString()}.`,
     );
   }
   if (totalUncompressedBytes > ZIP_MAX_UNCOMPRESSED_BYTES) {
@@ -190,6 +369,23 @@ export async function parseZipFile(file: File): Promise<ParsedZipPreview> {
       `ZIP expands to too much data (${formatBytes(totalUncompressedBytes)}). Limit is ${formatBytes(ZIP_MAX_UNCOMPRESSED_BYTES)}.`,
     );
   }
+
+  const zip = await JSZip.loadAsync(file);
+  const entries: ParsedZipEntry[] = [];
+
+  zip.forEach((relativePath, zipObject) => {
+    const normalized = normalizeArchivePath(relativePath, zipObject.dir);
+
+    if (!normalized || isMacArchiveArtifact(normalized)) {
+      return;
+    }
+
+    entries.push({
+      kind: zipObject.dir ? "directory" : "file",
+      path: normalized,
+      zipObject,
+    });
+  });
 
   const commonRoot = findCommonRoot(entries);
   const totalFiles = entries.filter((e) => e.kind === "file").length;

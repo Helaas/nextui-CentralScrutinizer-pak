@@ -1,7 +1,14 @@
 import JSZip from "jszip";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ZIP_MAX_UNCOMPRESSED_BYTES, parseZipFile, uploadPathsFromZip, uploadSelectionFromZip } from "./zip-upload";
+import {
+  ZIP_MAX_ENTRIES,
+  ZIP_MAX_UNCOMPRESSED_BYTES,
+  archiveRootFromFileName,
+  parseZipFile,
+  uploadPathsFromZip,
+  uploadSelectionFromZip,
+} from "./zip-upload";
 
 async function makeZipFile(name: string, build: (zip: JSZip) => void): Promise<File> {
   const zip = new JSZip();
@@ -15,6 +22,52 @@ async function makeZipFile(name: string, build: (zip: JSZip) => void): Promise<F
 
 function relativePaths(files: File[]): string[] {
   return files.map((file) => (file as File & { webkitRelativePath?: string }).webkitRelativePath ?? file.name);
+}
+
+function makeZipMetadataBytes(
+  entries: Array<{
+    isDirectory?: boolean;
+    name: string;
+    uncompressedSize?: number;
+  }>,
+): Uint8Array {
+  const encoder = new TextEncoder();
+  const centralDirectoryEntries = entries.map((entry) => {
+    const rawName = entry.isDirectory && !entry.name.endsWith("/") ? `${entry.name}/` : entry.name;
+    const fileName = encoder.encode(rawName);
+    const header = new Uint8Array(46 + fileName.length);
+    const view = new DataView(header.buffer);
+
+    view.setUint32(0, 0x02014b50, true);
+    view.setUint16(4, 20, true);
+    view.setUint16(6, 20, true);
+    view.setUint16(8, 0x0800, true);
+    view.setUint32(20, 0, true);
+    view.setUint32(24, entry.uncompressedSize ?? 0, true);
+    view.setUint16(28, fileName.length, true);
+    view.setUint32(38, entry.isDirectory ? 0x10 : 0, true);
+    header.set(fileName, 46);
+    return header;
+  });
+  const centralDirectorySize = centralDirectoryEntries.reduce((total, entry) => total + entry.length, 0);
+  const eocd = new Uint8Array(22);
+  const eocdView = new DataView(eocd.buffer);
+
+  eocdView.setUint32(0, 0x06054b50, true);
+  eocdView.setUint16(8, entries.length, true);
+  eocdView.setUint16(10, entries.length, true);
+  eocdView.setUint32(12, centralDirectorySize, true);
+  eocdView.setUint32(16, 0, true);
+
+  const archive = new Uint8Array(centralDirectorySize + eocd.length);
+  let cursor = 0;
+
+  for (const entry of centralDirectoryEntries) {
+    archive.set(entry, cursor);
+    cursor += entry.length;
+  }
+  archive.set(eocd, cursor);
+  return archive;
 }
 
 describe("parseZipFile", () => {
@@ -93,31 +146,63 @@ describe("parseZipFile", () => {
     expect(preview.zipNameWithoutExtension).toBe("Central.Scrutinizer");
   });
 
-  it("rejects archives whose uploadable entries exceed the uncompressed size limit", async () => {
-    const asyncMock = vi.fn();
-    const hugeEntry = {
-      _data: { uncompressedSize: ZIP_MAX_UNCOMPRESSED_BYTES + 1 },
-      async: asyncMock,
-      comment: "",
-      date: new Date(),
-      dir: false,
-      dosPermissions: null,
-      name: "huge.bin",
-      options: {},
-      unixPermissions: null,
-    } as unknown as JSZip.JSZipObject;
+  it("rejects archives whose uploadable entries exceed the uncompressed size limit before loading with JSZip", async () => {
+    const loadAsyncSpy = vi.spyOn(JSZip, "loadAsync");
+    const file = new File(
+      [makeZipMetadataBytes([{ name: "huge.bin", uncompressedSize: ZIP_MAX_UNCOMPRESSED_BYTES + 1 }])],
+      "huge.zip",
+      { type: "application/zip" },
+    );
+
+    await expect(parseZipFile(file)).rejects.toThrow(
+      "ZIP expands to too much data",
+    );
+    expect(loadAsyncSpy).not.toHaveBeenCalled();
+  });
+
+  it("counts only uploadable entries toward the ZIP entry limit", async () => {
     const zip = {
       forEach: (callback: (relativePath: string, zipObject: JSZip.JSZipObject) => void) => {
-        callback("huge.bin", hugeEntry);
+        callback("game.gba", {
+          async: vi.fn(),
+          comment: "",
+          date: new Date(),
+          dir: false,
+          dosPermissions: null,
+          name: "game.gba",
+          options: {},
+          unixPermissions: null,
+        } as unknown as JSZip.JSZipObject);
       },
     } as unknown as JSZip;
+    const file = new File(
+      [
+        makeZipMetadataBytes([
+          ...Array.from({ length: ZIP_MAX_ENTRIES }, (_, index) => ({
+            name: `__MACOSX/._artifact-${index}`,
+            uncompressedSize: 1,
+          })),
+          { name: "game.gba", uncompressedSize: 3 },
+        ]),
+      ],
+      "clean.zip",
+      { type: "application/zip" },
+    );
 
     vi.spyOn(JSZip, "loadAsync").mockResolvedValue(zip);
 
-    await expect(parseZipFile(new File(["zip"], "huge.zip", { type: "application/zip" }))).rejects.toThrow(
-      "ZIP expands to too much data",
-    );
-    expect(asyncMock).not.toHaveBeenCalled();
+    const preview = await parseZipFile(file);
+
+    expect(preview.entries.map((entry) => entry.path)).toEqual(["game.gba"]);
+    expect(preview.totalUncompressedBytes).toBe(3);
+  });
+});
+
+describe("archiveRootFromFileName", () => {
+  it("sanitizes invalid path characters and reserved device names", () => {
+    expect(archiveRootFromFileName("bad:name?.zip")).toBe("bad-name");
+    expect(archiveRootFromFileName("CON.zip")).toBe("archive-CON");
+    expect(archiveRootFromFileName("con.txt.zip")).toBe("archive-con.txt");
   });
 });
 

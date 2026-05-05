@@ -245,7 +245,6 @@ export default function Page() {
   } | null>(null);
   const [zipExtractDialog, setZipExtractDialog] = useState<{
     preview: ParsedZipPreview;
-    file: File;
     strategy: ExtractStrategy;
     overwriteExisting: boolean;
     preflight: UploadPreviewResponse | null;
@@ -836,7 +835,6 @@ export default function Page() {
 
       setZipExtractDialog({
         preview,
-        file,
         strategy: "extract-into-folder",
         overwriteExisting: false,
         preflight: null,
