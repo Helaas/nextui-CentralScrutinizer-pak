@@ -90,6 +90,7 @@ test("preserves empty folders through drag/drop and explicit ZIP upload", async 
 
   await page.getByRole("button", { name: "Upload ZIP" }).click();
   await (await chooser).setFiles(zipPath);
+  await page.getByRole("button", { name: "Extract" }).click();
 
   await expect(page.getByText("Uploaded 1 file and 3 folders.")).toBeVisible();
   await page.getByRole("button", { name: `Open ${zipRoot}` }).click();

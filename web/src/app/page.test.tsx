@@ -40,11 +40,15 @@ const mockApi = vi.hoisted(() => ({
   writeTextFile: vi.fn(),
 }));
 const mockZipUpload = vi.hoisted(() => ({
+  parseZipFile: vi.fn(),
   uploadSelectionFromZip: vi.fn(),
 }));
 
 vi.mock("../lib/api", () => mockApi);
-vi.mock("../lib/zip-upload", () => mockZipUpload);
+vi.mock("../lib/zip-upload", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/zip-upload")>()),
+  ...mockZipUpload,
+}));
 vi.mock("../components/logs-tool-view", () => ({
   LogsToolView: ({ onBack }: { onBack: () => void }) => (
     <div>
@@ -1140,6 +1144,17 @@ describe("Page", () => {
       configurable: true,
       value: "Archive/GBA/Pokemon Emerald.gba",
     });
+    mockZipUpload.parseZipFile.mockResolvedValue({
+      commonRoot: "Root",
+      entries: [
+        { kind: "directory", path: "Root", zipObject: {} },
+        { kind: "directory", path: "Root/Empty", zipObject: {} },
+        { kind: "file", path: "Root/GBA/Pokemon Emerald.gba", zipObject: {} },
+      ],
+      totalDirectories: 2,
+      totalFiles: 1,
+      zipNameWithoutExtension: "Archive",
+    });
     mockZipUpload.uploadSelectionFromZip.mockResolvedValue({
       directories: ["Archive", "Archive/Empty", "Archive/GBA"],
       files: [extractedFile],
@@ -1186,9 +1201,14 @@ describe("Page", () => {
 
     await openFileBrowserTool();
     fireEvent.click(await screen.findByRole("button", { name: "Upload ZIP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Extract" }));
 
     await screen.findByText("Uploaded 1 file and 3 folders.");
-    expect(mockZipUpload.uploadSelectionFromZip).toHaveBeenCalledWith(zipFile);
+    expect(mockZipUpload.parseZipFile).toHaveBeenCalledWith(zipFile);
+    expect(mockZipUpload.uploadSelectionFromZip).toHaveBeenCalledWith(
+      expect.objectContaining({ commonRoot: "Root", zipNameWithoutExtension: "Archive" }),
+      "extract-into-folder",
+    );
     expect(mockApi.beginUploadFilesBatched).toHaveBeenCalledWith(
       expect.objectContaining({
         directories: ["Archive", "Archive/Empty", "Archive/GBA"],

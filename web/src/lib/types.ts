@@ -118,6 +118,8 @@ export type UploadSelection = {
   directories: string[];
 };
 
+export type ExtractStrategy = "extract-here" | "extract-into-folder";
+
 export type ReplaceArtRequest = {
   tag: string;
   path: string;

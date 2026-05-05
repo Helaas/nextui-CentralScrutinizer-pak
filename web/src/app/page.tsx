@@ -6,6 +6,7 @@ import { AppShell } from "../components/app-shell";
 import { BrowserView } from "../components/browser-view";
 import { DashboardShell } from "../components/dashboard-shell";
 import { FileEditorModal } from "../components/file-editor-modal";
+import { ZipExtractDialog } from "../components/zip-extract-dialog";
 import { LogsToolView } from "../components/logs-tool-view";
 import { MacDotCleanToolView } from "../components/mac-dot-clean-tool-view";
 import { PairScreen } from "../components/pair-screen";
@@ -33,7 +34,7 @@ import {
   writeTextFile,
 } from "../lib/api";
 import { getBrowserId } from "../lib/browser-id";
-import { uploadSelectionFromZip } from "../lib/zip-upload";
+import { parseZipFile, uploadSelectionFromZip, type ParsedZipPreview } from "../lib/zip-upload";
 import { useBrowserPagination } from "../lib/use-browser-pagination";
 import {
   createPlatformDisplayNames,
@@ -55,6 +56,7 @@ import { PLAINTEXT_MAX_BYTES } from "../lib/plaintext";
 import type {
   BrowserEntry,
   BrowserScope,
+  ExtractStrategy,
   FileSearchResult,
   LibraryEmuFilter,
   PlatformGroup,
@@ -232,6 +234,10 @@ export default function Page() {
     loading: boolean;
     loadError: string | null;
     saving: boolean;
+  } | null>(null);
+  const [zipExtractDialog, setZipExtractDialog] = useState<{
+    preview: ParsedZipPreview;
+    file: File;
   } | null>(null);
 
   function navigate(next: AppViewState, replace = false) {
@@ -713,20 +719,21 @@ export default function Page() {
          */
         await refreshCurrentData();
 
-        const plural = (n: number) => (n === 1 ? "" : "s");
         const uploadedParts = formatUploadParts(summary.uploaded, summary.directoriesCreated);
         const failedParts = formatUploadParts(summary.failed, summary.directoriesFailed);
+        const noneUploaded = summary.uploaded === 0 && summary.directoriesCreated === 0;
+        const anyFailed = summary.failed > 0 || summary.directoriesFailed > 0;
 
-        if (summary.cancelled && summary.uploaded === 0 && summary.directoriesCreated === 0) {
+        if (summary.cancelled && noneUploaded) {
           setNotice("Upload cancelled.");
         } else if (summary.cancelled) {
-          setNotice(`Upload cancelled after ${uploadedParts || "0 files"}.`);
-        } else if ((summary.failed > 0 || summary.directoriesFailed > 0) && summary.uploaded === 0 && summary.directoriesCreated === 0) {
-          setNotice("Upload failed.");
-        } else if (summary.failed > 0 || summary.directoriesFailed > 0) {
-          setNotice(`Uploaded ${uploadedParts || "0 files"}, ${failedParts || "0 files"} failed.`);
+          setNotice(`Upload cancelled after ${uploadedParts}.`);
+        } else if (anyFailed && noneUploaded) {
+          setNotice(`Upload failed${failedParts ? ` (${failedParts} failed)` : ""}.`);
+        } else if (anyFailed) {
+          setNotice(`Uploaded ${uploadedParts}, ${failedParts} failed.`);
         } else {
-          setNotice(`Uploaded ${uploadedParts || `${summary.uploaded} file${plural(summary.uploaded)}`}.`);
+          setNotice(`Uploaded ${uploadedParts}.`);
         }
       } finally {
         clearTransfer();
@@ -762,7 +769,30 @@ export default function Page() {
     }
 
     try {
-      const selection = await uploadSelectionFromZip(file);
+      const preview = await parseZipFile(file);
+
+      if (preview.entries.length === 0) {
+        setNotice("ZIP contains no uploadable files or folders.");
+        return;
+      }
+
+      setZipExtractDialog({ preview, file });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "ZIP upload failed.");
+    }
+  };
+
+  const handleConfirmZipExtract = async (strategy: ExtractStrategy) => {
+    if (!zipExtractDialog) {
+      return;
+    }
+
+    const { preview } = zipExtractDialog;
+
+    setZipExtractDialog(null);
+
+    try {
+      const selection = await uploadSelectionFromZip(preview, strategy);
 
       if (!hasUploadItems(selection)) {
         setNotice("ZIP contains no uploadable files or folders.");
@@ -1444,6 +1474,17 @@ export default function Page() {
               void handleSaveEditor(nextContent);
             }}
             saving={editor.saving}
+          />
+        ) : null}
+        {zipExtractDialog ? (
+          <ZipExtractDialog
+            preview={zipExtractDialog.preview}
+            onCancel={() => {
+              setZipExtractDialog(null);
+            }}
+            onConfirm={(strategy) => {
+              void handleConfirmZipExtract(strategy);
+            }}
           />
         ) : null}
       </AppShell>

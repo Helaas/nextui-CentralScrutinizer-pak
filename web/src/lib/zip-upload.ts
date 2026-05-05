@@ -1,12 +1,22 @@
 import JSZip from "jszip";
 
-import type { UploadSelection } from "./types";
+import type { ExtractStrategy, UploadSelection } from "./types";
 
-type ArchiveEntry = {
+export type ParsedZipEntry = {
   kind: "directory" | "file";
   path: string;
   zipObject: JSZip.JSZipObject;
 };
+
+export type ParsedZipPreview = {
+  entries: ParsedZipEntry[];
+  commonRoot: string | null;
+  totalFiles: number;
+  totalDirectories: number;
+  zipNameWithoutExtension: string;
+};
+
+export const ZIP_MAX_ENTRIES = 50000;
 
 function normalizeArchivePath(path: string, isDirectory: boolean): string {
   let normalized = path.replace(/\\/g, "/");
@@ -21,7 +31,7 @@ function normalizeArchivePath(path: string, isDirectory: boolean): string {
   return normalized;
 }
 
-function archiveRootFromFileName(name: string): string {
+export function archiveRootFromFileName(name: string): string {
   const withoutExtension = name.replace(/\.zip$/i, "").trim();
   const normalized = withoutExtension
     .replace(/[\\/]+/g, "-")
@@ -45,25 +55,45 @@ function firstPathSegment(path: string): string {
   return slash >= 0 ? path.slice(0, slash) : path;
 }
 
-function shouldPreserveArchiveRoot(entries: ArchiveEntry[]): boolean {
+function findCommonRoot(entries: ParsedZipEntry[]): string | null {
   if (entries.length === 0) {
-    return true;
+    return null;
   }
 
   const root = firstPathSegment(entries[0].path);
 
   if (!root) {
-    return true;
+    return null;
   }
 
   const allShareRoot = entries.every((entry) => entry.path === root || entry.path.startsWith(`${root}/`));
   const hasTopLevelFile = entries.some((entry) => entry.kind === "file" && !entry.path.includes("/"));
   const hasRootDirectoryEntry = entries.some((entry) => entry.kind === "directory" && entry.path === root);
 
-  return allShareRoot && (hasRootDirectoryEntry || !hasTopLevelFile);
+  if (allShareRoot && (hasRootDirectoryEntry || !hasTopLevelFile)) {
+    return root;
+  }
+
+  return null;
 }
 
-function withArchiveWrapper(path: string, wrapper: string): string {
+function stripCommonRoot(path: string, commonRoot: string | null): string {
+  if (!commonRoot) {
+    return path;
+  }
+
+  if (path === commonRoot) {
+    return "";
+  }
+
+  if (path.startsWith(`${commonRoot}/`)) {
+    return path.slice(commonRoot.length + 1);
+  }
+
+  return path;
+}
+
+function applyWrapper(path: string, wrapper: string): string {
   return path ? `${wrapper}/${path}` : wrapper;
 }
 
@@ -75,11 +105,27 @@ function addParentDirectories(path: string, directories: Set<string>) {
   }
 }
 
-export async function uploadSelectionFromZip(file: File): Promise<UploadSelection> {
+export function computeUploadPath(
+  entryPath: string,
+  preview: Pick<ParsedZipPreview, "commonRoot" | "zipNameWithoutExtension">,
+  strategy: ExtractStrategy,
+): string {
+  let uploadPath = stripCommonRoot(entryPath, preview.commonRoot);
+
+  if (strategy === "extract-into-folder") {
+    uploadPath = applyWrapper(uploadPath, preview.zipNameWithoutExtension);
+  }
+
+  return uploadPath;
+}
+
+export async function parseZipFile(file: File): Promise<ParsedZipPreview> {
   const zip = await JSZip.loadAsync(file);
-  const entries: ArchiveEntry[] = [];
+  const entries: ParsedZipEntry[] = [];
+  let totalSeen = 0;
 
   zip.forEach((relativePath, zipObject) => {
+    totalSeen += 1;
     const normalized = normalizeArchivePath(relativePath, zipObject.dir);
 
     if (!normalized || isMacArchiveArtifact(normalized)) {
@@ -93,13 +139,39 @@ export async function uploadSelectionFromZip(file: File): Promise<UploadSelectio
     });
   });
 
-  const preserveRoot = shouldPreserveArchiveRoot(entries);
-  const wrapper = archiveRootFromFileName(file.name);
+  if (totalSeen > ZIP_MAX_ENTRIES) {
+    throw new Error(
+      `ZIP contains too many entries (${totalSeen.toLocaleString()}). Limit is ${ZIP_MAX_ENTRIES.toLocaleString()}.`,
+    );
+  }
+
+  const commonRoot = findCommonRoot(entries);
+  const totalFiles = entries.filter((e) => e.kind === "file").length;
+  const totalDirectories = entries.filter((e) => e.kind === "directory").length;
+
+  return {
+    entries,
+    commonRoot,
+    totalFiles,
+    totalDirectories,
+    zipNameWithoutExtension: archiveRootFromFileName(file.name),
+  };
+}
+
+export async function uploadSelectionFromZip(
+  preview: ParsedZipPreview,
+  strategy: ExtractStrategy,
+): Promise<UploadSelection> {
+  const { entries, commonRoot, zipNameWithoutExtension } = preview;
   const directories = new Set<string>();
   const files: File[] = [];
 
   for (const entry of entries) {
-    const uploadPath = preserveRoot ? entry.path : withArchiveWrapper(entry.path, wrapper);
+    const uploadPath = computeUploadPath(entry.path, { commonRoot, zipNameWithoutExtension }, strategy);
+
+    if (!uploadPath) {
+      continue;
+    }
 
     if (entry.kind === "directory") {
       directories.add(uploadPath);
@@ -116,7 +188,9 @@ export async function uploadSelectionFromZip(file: File): Promise<UploadSelectio
 
     Object.defineProperty(uploadFile, "webkitRelativePath", {
       configurable: true,
+      enumerable: true,
       value: uploadPath,
+      writable: false,
     });
     files.push(uploadFile);
   }
