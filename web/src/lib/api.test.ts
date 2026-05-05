@@ -15,6 +15,8 @@ import {
   getStatus,
   pairBrowser,
   pairBrowserQr,
+  previewUpload,
+  previewUploadBatched,
   readTextFile,
   replaceArt,
   revokeBrowser,
@@ -30,6 +32,7 @@ class MockXhr {
   headers: Record<string, string> = {};
   listeners: Record<string, () => void> = {};
   method = "";
+  responseText = "";
   status = 200;
   uploadListener?: (event: { lengthComputable: boolean; loaded: number; total: number }) => void;
   url = "";
@@ -378,6 +381,21 @@ describe("uploadFiles", () => {
     expect(request.body?.getAll("file")).toEqual([]);
   });
 
+  it("includes overwrite=1 when overwriting is enabled", async () => {
+    vi.stubGlobal("XMLHttpRequest", MockXhr as unknown as typeof XMLHttpRequest);
+
+    await beginUploadFiles(
+      {
+        files: [new File(["payload"], "test.txt", { type: "text/plain" })],
+        overwriteExisting: true,
+        scope: "files",
+      },
+      "csrf-token",
+    ).promise;
+
+    expect(MockXhr.instances[0].body?.get("overwrite")).toBe("1");
+  });
+
   it("can abort an upload in progress", async () => {
     MockXhr.autoLoad = false;
     vi.stubGlobal("XMLHttpRequest", MockXhr as unknown as typeof XMLHttpRequest);
@@ -393,6 +411,168 @@ describe("uploadFiles", () => {
     handle.cancel();
 
     await expect(handle.promise).rejects.toBeInstanceOf(UploadAbortedError);
+  });
+});
+
+describe("previewUpload", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts file paths and directories with the csrf header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ overwriteableCount: 1, blockingCount: 0, overwriteable: [], blocking: [] }),
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await previewUpload(
+      {
+        scope: "files",
+        path: "Tools",
+        directories: ["Tools/Empty"],
+        filePaths: ["Tools/tg5040/Central Scrutinizer.pak/pak.json"],
+      },
+      "csrf-token",
+    );
+
+    const [, options] = fetchMock.mock.calls[0] as [string, { body: FormData; headers: Record<string, string> }];
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/upload/preview",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "X-CS-CSRF": "csrf-token" },
+      }),
+    );
+    expect(options.body.getAll("directory")).toEqual(["Tools/Empty"]);
+    expect(options.body.getAll("file_path")).toEqual(["Tools/tg5040/Central Scrutinizer.pak/pak.json"]);
+  });
+
+  it("passes an abort signal to preview requests when provided", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ overwriteableCount: 0, blockingCount: 0, overwriteable: [], blocking: [] }),
+    });
+    const controller = new AbortController();
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await previewUpload(
+      {
+        scope: "files",
+        directories: [],
+        filePaths: ["Tools/tg5040/Central Scrutinizer.pak/pak.json"],
+      },
+      "csrf-token",
+      { signal: controller.signal },
+    );
+
+    const [, options] = fetchMock.mock.calls[0] as [string, { signal?: AbortSignal }];
+    expect(options.signal).toBe(controller.signal);
+  });
+
+  it("batches preview requests and aggregates conflict counts", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          overwriteableCount: 0,
+          blockingCount: 1,
+          overwriteable: [],
+          blocking: [{ kind: "directory-over-file", path: "Tools" }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          overwriteableCount: 1,
+          blockingCount: 0,
+          overwriteable: [{ kind: "overwrite", path: "Tools/tg5040/Central Scrutinizer.pak/pak.json" }],
+          blocking: [],
+        }),
+      });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const summary = await previewUploadBatched(
+      {
+        scope: "files",
+        directories: ["Tools/Empty"],
+        filePaths: ["Tools/tg5040/Central Scrutinizer.pak/pak.json"],
+      },
+      "csrf-token",
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(summary).toEqual({
+      overwriteableCount: 1,
+      blockingCount: 1,
+      overwriteable: [{ kind: "overwrite", path: "Tools/tg5040/Central Scrutinizer.pak/pak.json" }],
+      blocking: [{ kind: "directory-over-file", path: "Tools" }],
+    });
+  });
+
+  it("keeps preview lists capped while still deduplicating later batches", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          overwriteableCount: 4,
+          blockingCount: 0,
+          overwriteable: [
+            { kind: "overwrite", path: "path-1" },
+            { kind: "overwrite", path: "path-2" },
+            { kind: "overwrite", path: "path-3" },
+            { kind: "overwrite", path: "path-4" },
+          ],
+          blocking: [],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          overwriteableCount: 2,
+          blockingCount: 0,
+          overwriteable: [
+            { kind: "overwrite", path: "path-5" },
+            { kind: "overwrite", path: "path-6" },
+          ],
+          blocking: [],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          overwriteableCount: 1,
+          blockingCount: 0,
+          overwriteable: [{ kind: "overwrite", path: "path-6" }],
+          blocking: [],
+        }),
+      });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const summary = await previewUploadBatched(
+      {
+        scope: "files",
+        directories: Array.from({ length: UPLOAD_BATCH_SIZE * 2 + 1 }, (_, index) => `dir-${index}`),
+        filePaths: [],
+      },
+      "csrf-token",
+    );
+
+    expect(summary.overwriteableCount).toBe(7);
+    expect(summary.overwriteable).toEqual([
+      { kind: "overwrite", path: "path-1" },
+      { kind: "overwrite", path: "path-2" },
+      { kind: "overwrite", path: "path-3" },
+      { kind: "overwrite", path: "path-4" },
+      { kind: "overwrite", path: "path-5" },
+    ]);
   });
 });
 
@@ -478,7 +658,14 @@ describe("beginUploadFilesBatched", () => {
     handle.cancel();
 
     const summary = await handle.promise;
-    expect(summary).toEqual({ uploaded: 0, failed: 0, directoriesCreated: 0, directoriesFailed: 0, cancelled: true });
+    expect(summary).toEqual({
+      uploaded: 0,
+      failed: 0,
+      directoriesCreated: 0,
+      directoriesFailed: 0,
+      cancelled: true,
+      errorMessage: null,
+    });
   });
 
   it("uploads directories before file batches", async () => {
@@ -491,7 +678,14 @@ describe("beginUploadFilesBatched", () => {
       "csrf-token",
     ).promise;
 
-    expect(summary).toEqual({ uploaded: 1, failed: 0, directoriesCreated: 2, directoriesFailed: 0, cancelled: false });
+    expect(summary).toEqual({
+      uploaded: 1,
+      failed: 0,
+      directoriesCreated: 2,
+      directoriesFailed: 0,
+      cancelled: false,
+      errorMessage: null,
+    });
     expect(MockXhr.instances).toHaveLength(2);
     expect(MockXhr.instances[0].body?.getAll("directory")).toEqual(["Root", "Root/Empty"]);
     expect(MockXhr.instances[0].body?.getAll("file")).toEqual([]);
@@ -532,6 +726,7 @@ describe("beginUploadFilesBatched", () => {
       directoriesCreated: 0,
       directoriesFailed: 0,
       cancelled: false,
+      errorMessage: "Upload failed",
     });
   });
 });

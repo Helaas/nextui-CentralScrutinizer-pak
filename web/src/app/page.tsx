@@ -26,6 +26,7 @@ import {
   getSession,
   pairBrowser,
   pairBrowserQr,
+  previewUploadBatched,
   readTextFile,
   replaceArt,
   renameItem,
@@ -34,7 +35,7 @@ import {
   writeTextFile,
 } from "../lib/api";
 import { getBrowserId } from "../lib/browser-id";
-import { parseZipFile, uploadSelectionFromZip, type ParsedZipPreview } from "../lib/zip-upload";
+import { parseZipFile, uploadPathsFromZip, uploadSelectionFromZip, type ParsedZipPreview } from "../lib/zip-upload";
 import { useBrowserPagination } from "../lib/use-browser-pagination";
 import {
   createPlatformDisplayNames,
@@ -64,10 +65,13 @@ import type {
   PlatformResource,
   SessionResponse,
   TransferState,
+  UploadPreviewResponse,
   UploadSelection,
+  ZipExtractOptions,
 } from "../lib/types";
 
 type DirectoryCapableInput = HTMLInputElement & { webkitdirectory?: boolean };
+const ZIP_PREVIEW_TIMEOUT_MS = 15_000;
 
 function getInitialView(): AppViewState {
   if (typeof window === "undefined") {
@@ -190,6 +194,10 @@ function getReconnectMessage(): string {
   return "Connection restored, but this browser is no longer trusted. Refresh the PIN or QR code on the device to pair again.";
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 function getPairingUnavailableMessage(): string {
   return PAIRING_UNAVAILABLE_MESSAGE;
 }
@@ -238,7 +246,51 @@ export default function Page() {
   const [zipExtractDialog, setZipExtractDialog] = useState<{
     preview: ParsedZipPreview;
     file: File;
+    strategy: ExtractStrategy;
+    overwriteExisting: boolean;
+    preflight: UploadPreviewResponse | null;
+    checking: boolean;
   } | null>(null);
+  const zipPreviewAbortRef = useRef<{
+    controller: AbortController;
+    timeoutId: ReturnType<typeof setTimeout>;
+    timedOut: boolean;
+  } | null>(null);
+
+  function clearZipPreviewAbort(abort = true) {
+    const activeRequest = zipPreviewAbortRef.current;
+
+    if (!activeRequest) {
+      return;
+    }
+    clearTimeout(activeRequest.timeoutId);
+    zipPreviewAbortRef.current = null;
+    if (abort) {
+      activeRequest.controller.abort();
+    }
+  }
+
+  function beginZipPreviewAbort() {
+    const activeRequest = {
+      controller: new AbortController(),
+      timeoutId: 0 as ReturnType<typeof setTimeout>,
+      timedOut: false,
+    };
+
+    clearZipPreviewAbort();
+    activeRequest.timeoutId = setTimeout(() => {
+      activeRequest.timedOut = true;
+      activeRequest.controller.abort();
+    }, ZIP_PREVIEW_TIMEOUT_MS);
+    zipPreviewAbortRef.current = activeRequest;
+    return activeRequest;
+  }
+
+  useEffect(() => {
+    return () => {
+      clearZipPreviewAbort();
+    };
+  }, []);
 
   function navigate(next: AppViewState, replace = false) {
     setViewState(next);
@@ -688,7 +740,7 @@ export default function Page() {
     }
   }
 
-  const handleUploadSelection = async (selection: UploadSelection) => {
+  const handleUploadSelection = async (selection: UploadSelection, options?: { overwriteExisting?: boolean }) => {
     const scopeState = currentScopeState();
     const csrf = session.csrf;
 
@@ -700,7 +752,7 @@ export default function Page() {
       const totalFiles = selection.files.length;
       const totalDirectories = selection.directories.length;
       const label = `Uploading ${formatUploadParts(totalFiles, totalDirectories)}`;
-      const upload = beginUploadFilesBatched({ ...scopeState, ...selection }, csrf, (progress) => {
+      const upload = beginUploadFilesBatched({ ...scopeState, ...selection, overwriteExisting: options?.overwriteExisting }, csrf, (progress) => {
         setTransfer((current) => ({ ...current, progress }));
       });
 
@@ -728,10 +780,16 @@ export default function Page() {
           setNotice("Upload cancelled.");
         } else if (summary.cancelled) {
           setNotice(`Upload cancelled after ${uploadedParts}.`);
+        } else if (anyFailed && noneUploaded && summary.errorMessage) {
+          setNotice(summary.errorMessage);
         } else if (anyFailed && noneUploaded) {
           setNotice(`Upload failed${failedParts ? ` (${failedParts} failed)` : ""}.`);
         } else if (anyFailed) {
-          setNotice(`Uploaded ${uploadedParts}, ${failedParts} failed.`);
+          setNotice(
+            summary.errorMessage
+              ? `Uploaded ${uploadedParts}, ${failedParts} failed. ${summary.errorMessage}`
+              : `Uploaded ${uploadedParts}, ${failedParts} failed.`,
+          );
         } else {
           setNotice(`Uploaded ${uploadedParts}.`);
         }
@@ -762,7 +820,7 @@ export default function Page() {
       return;
     }
 
-    const file = await pickSingleFile(".zip,application/zip,application/x-zip-compressed");
+    const file = await pickSingleFile(".zip,.pakz,application/zip,application/x-zip-compressed");
 
     if (!file) {
       return;
@@ -776,31 +834,109 @@ export default function Page() {
         return;
       }
 
-      setZipExtractDialog({ preview, file });
+      setZipExtractDialog({
+        preview,
+        file,
+        strategy: "extract-into-folder",
+        overwriteExisting: false,
+        preflight: null,
+        checking: false,
+      });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "ZIP upload failed.");
     }
   };
 
-  const handleConfirmZipExtract = async (strategy: ExtractStrategy) => {
-    if (!zipExtractDialog) {
+  const handleConfirmZipExtract = async ({ strategy, overwriteExisting }: ZipExtractOptions) => {
+    if (!zipExtractDialog || !session.csrf) {
+      return;
+    }
+
+    const scopeState = currentScopeState();
+
+    if (!scopeState) {
       return;
     }
 
     const { preview } = zipExtractDialog;
+    const uploadPaths = uploadPathsFromZip(preview, strategy);
 
-    setZipExtractDialog(null);
+    if (uploadPaths.filePaths.length === 0 && uploadPaths.directories.length === 0) {
+      setNotice("ZIP contains no uploadable files or folders.");
+      return;
+    }
+
+    setZipExtractDialog((current) =>
+      current
+        ? {
+            ...current,
+            strategy,
+            overwriteExisting,
+            checking: true,
+            preflight: null,
+          }
+        : current,
+    );
+
+    const previewRequest = beginZipPreviewAbort();
 
     try {
+      const preflight = await previewUploadBatched(
+        {
+          ...scopeState,
+          directories: uploadPaths.explicitDirectories,
+          filePaths: uploadPaths.filePaths,
+        },
+        session.csrf,
+        { signal: previewRequest.controller.signal },
+      );
+      if (zipPreviewAbortRef.current === previewRequest) {
+        clearTimeout(previewRequest.timeoutId);
+        zipPreviewAbortRef.current = null;
+      }
+
+      if (preflight.blockingCount > 0 || (!overwriteExisting && preflight.overwriteableCount > 0)) {
+        setZipExtractDialog((current) =>
+          current
+            ? {
+                ...current,
+                strategy,
+                overwriteExisting,
+                checking: false,
+                preflight,
+              }
+            : current,
+        );
+        return;
+      }
+
       const selection = await uploadSelectionFromZip(preview, strategy);
 
       if (!hasUploadItems(selection)) {
+        setZipExtractDialog((current) => (current ? { ...current, checking: false } : current));
         setNotice("ZIP contains no uploadable files or folders.");
         return;
       }
 
-      await handleUploadSelection(selection);
+      setZipExtractDialog(null);
+      await handleUploadSelection(selection, { overwriteExisting });
     } catch (error) {
+      const isCurrentPreviewRequest = zipPreviewAbortRef.current === previewRequest;
+      const timedOut = isCurrentPreviewRequest && previewRequest.timedOut;
+      const abortError = isAbortError(error);
+
+      if (isCurrentPreviewRequest) {
+        clearZipPreviewAbort(false);
+        setZipExtractDialog((current) => (current ? { ...current, checking: false } : current));
+      } else if (!abortError) {
+        setZipExtractDialog((current) => (current ? { ...current, checking: false } : current));
+      }
+      if (abortError) {
+        if (timedOut) {
+          setNotice("ZIP conflict check timed out.");
+        }
+        return;
+      }
       setNotice(error instanceof Error ? error.message : "ZIP upload failed.");
     }
   };
@@ -1478,13 +1614,40 @@ export default function Page() {
         ) : null}
         {zipExtractDialog ? (
           <ZipExtractDialog
+            checking={zipExtractDialog.checking}
+            conflicts={zipExtractDialog.preflight}
+            overwriteExisting={zipExtractDialog.overwriteExisting}
             preview={zipExtractDialog.preview}
             onCancel={() => {
+              clearZipPreviewAbort();
               setZipExtractDialog(null);
             }}
-            onConfirm={(strategy) => {
-              void handleConfirmZipExtract(strategy);
+            onConfirm={(options) => {
+              void handleConfirmZipExtract(options);
             }}
+            onOverwriteChange={(overwriteExisting) => {
+              setZipExtractDialog((current) =>
+                current
+                  ? {
+                      ...current,
+                      overwriteExisting,
+                      preflight: null,
+                    }
+                  : current,
+              );
+            }}
+            onStrategyChange={(strategy) => {
+              setZipExtractDialog((current) =>
+                current
+                  ? {
+                      ...current,
+                      strategy,
+                      preflight: null,
+                    }
+                  : current,
+              );
+            }}
+            strategy={zipExtractDialog.strategy}
           />
         ) : null}
       </AppShell>

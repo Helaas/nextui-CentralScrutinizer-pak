@@ -111,6 +111,7 @@ export type UploadRequest = {
   path?: string;
   files: File[];
   directories?: string[];
+  overwriteExisting?: boolean;
 };
 
 export type UploadSelection = {
@@ -118,7 +119,34 @@ export type UploadSelection = {
   directories: string[];
 };
 
-export type ExtractStrategy = "extract-here" | "extract-into-folder";
+export type ExtractStrategy = "extract-here" | "extract-into-folder" | "preserve-full-path";
+
+export type ZipExtractOptions = {
+  strategy: ExtractStrategy;
+  overwriteExisting: boolean;
+};
+
+export type UploadPreviewRequest = {
+  scope: BrowserScope;
+  tag?: string;
+  path?: string;
+  directories?: string[];
+  filePaths: string[];
+};
+
+export type UploadPreviewConflictKind = "overwrite" | "file-over-directory" | "directory-over-file";
+
+export type UploadPreviewConflict = {
+  path: string;
+  kind: UploadPreviewConflictKind;
+};
+
+export type UploadPreviewResponse = {
+  overwriteableCount: number;
+  blockingCount: number;
+  overwriteable: UploadPreviewConflict[];
+  blocking: UploadPreviewConflict[];
+};
 
 export type ReplaceArtRequest = {
   tag: string;

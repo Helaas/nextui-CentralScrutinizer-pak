@@ -3,10 +3,12 @@ import JSZip from "jszip";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ParsedZipPreview } from "../lib/zip-upload";
+import type { ExtractStrategy, UploadPreviewResponse } from "../lib/types";
 import { ZipExtractDialog } from "./zip-extract-dialog";
 
 function makePreview(overrides: Partial<ParsedZipPreview> = {}): ParsedZipPreview {
   return {
+    archiveFileName: "archive.zip",
     commonRoot: "Root",
     entries: [
       { kind: "directory", path: "Root", zipObject: {} as unknown as JSZip.JSZipObject },
@@ -20,6 +22,33 @@ function makePreview(overrides: Partial<ParsedZipPreview> = {}): ParsedZipPrevie
   };
 }
 
+function renderDialog(overrides: Partial<{
+  strategy: ExtractStrategy;
+  overwriteExisting: boolean;
+  conflicts: UploadPreviewResponse | null;
+  checking: boolean;
+  onCancel: () => void;
+  onConfirm: (options: { strategy: ExtractStrategy; overwriteExisting: boolean }) => void;
+  onStrategyChange: (strategy: ExtractStrategy) => void;
+  onOverwriteChange: (value: boolean) => void;
+}> = {}) {
+  const props = {
+    checking: false,
+    conflicts: null,
+    onCancel: vi.fn(),
+    onConfirm: vi.fn(),
+    onOverwriteChange: vi.fn(),
+    onStrategyChange: vi.fn(),
+    overwriteExisting: false,
+    preview: makePreview(),
+    strategy: "extract-into-folder" as ExtractStrategy,
+    ...overrides,
+  };
+
+  render(<ZipExtractDialog {...props} />);
+  return props;
+}
+
 describe("ZipExtractDialog", () => {
   afterEach(() => {
     cleanup();
@@ -27,16 +56,17 @@ describe("ZipExtractDialog", () => {
   });
 
   it("renders the dialog with ZIP name and options", () => {
-    render(<ZipExtractDialog preview={makePreview()} onCancel={vi.fn()} onConfirm={vi.fn()} />);
+    renderDialog();
 
     expect(screen.getByText("Extract ZIP")).toBeTruthy();
     expect(screen.getByText("archive.zip")).toBeTruthy();
     expect(screen.getByRole("radio", { name: /Extract here/ })).toBeTruthy();
     expect(screen.getByRole("radio", { name: /Extract into folder/ })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /Preserve full archive path/ })).toBeTruthy();
   });
 
   it("pre-selects Extract into folder by default", () => {
-    render(<ZipExtractDialog preview={makePreview()} onCancel={vi.fn()} onConfirm={vi.fn()} />);
+    renderDialog();
 
     const extractHere = screen.getByRole("radio", { name: /Extract here/ }) as HTMLInputElement;
     const extractFolder = screen.getByRole("radio", { name: /Extract into folder/ }) as HTMLInputElement;
@@ -48,55 +78,62 @@ describe("ZipExtractDialog", () => {
   it("calls onCancel when Cancel is clicked", () => {
     const onCancel = vi.fn();
 
-    render(<ZipExtractDialog preview={makePreview()} onCancel={onCancel} onConfirm={vi.fn()} />);
+    renderDialog({ onCancel });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it("calls onConfirm with selected strategy when Extract is clicked", () => {
+  it("calls onConfirm with the selected options when Extract is clicked", () => {
     const onConfirm = vi.fn();
 
-    render(<ZipExtractDialog preview={makePreview()} onCancel={vi.fn()} onConfirm={onConfirm} />);
+    renderDialog({ onConfirm });
     fireEvent.click(screen.getByRole("button", { name: "Extract" }));
 
-    expect(onConfirm).toHaveBeenCalledWith("extract-into-folder");
+    expect(onConfirm).toHaveBeenCalledWith({ strategy: "extract-into-folder", overwriteExisting: false });
   });
 
-  it("switches strategy when a radio option is clicked", () => {
-    const onConfirm = vi.fn();
+  it("reports strategy changes through the controlled callback", () => {
+    const onStrategyChange = vi.fn();
 
-    render(<ZipExtractDialog preview={makePreview()} onCancel={vi.fn()} onConfirm={onConfirm} />);
+    renderDialog({ onStrategyChange });
     fireEvent.click(screen.getByRole("radio", { name: /Extract here/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Extract" }));
 
-    expect(onConfirm).toHaveBeenCalledWith("extract-here");
+    expect(onStrategyChange).toHaveBeenCalledWith("extract-here");
   });
 
-  it("shows preview paths for both strategies", () => {
-    render(<ZipExtractDialog preview={makePreview()} onCancel={vi.fn()} onConfirm={vi.fn()} />);
+  it("shows preview paths for all strategies", () => {
+    renderDialog();
 
     expect(screen.getByText("Empty")).toBeTruthy();
     expect(screen.getByText("game.gba")).toBeTruthy();
     expect(screen.getByText("archive/Empty")).toBeTruthy();
     expect(screen.getByText("archive/game.gba")).toBeTruthy();
+    expect(screen.getByText("Root/Empty")).toBeTruthy();
+    expect(screen.getByText("Root/game.gba")).toBeTruthy();
   });
 
-  it("shows 'and N more' when there are more than 5 entries", () => {
-    const entries = Array.from({ length: 7 }, (_, i) => ({
-      kind: "file" as const,
-      path: `Root/file${i}.txt`,
-      zipObject: {} as unknown as JSZip.JSZipObject,
-    }));
+  it("shows conflict summaries and overwrite guidance", () => {
+    renderDialog({
+      conflicts: {
+        overwriteableCount: 2,
+        blockingCount: 1,
+        overwriteable: [{ kind: "overwrite", path: "Tools/tg5040/Central Scrutinizer.pak/pak.json" }],
+        blocking: [{ kind: "file-over-directory", path: "Tools/tg5040/Central Scrutinizer.pak" }],
+      },
+    });
 
-    render(
-      <ZipExtractDialog
-        preview={makePreview({ entries, totalFiles: 7, totalDirectories: 0 })}
-        onCancel={vi.fn()}
-        onConfirm={vi.fn()}
-      />,
-    );
+    expect(screen.getByText(/Replaceable file conflicts/)).toBeTruthy();
+    expect(screen.getByText(/Blocking type conflicts/)).toBeTruthy();
+    expect(screen.getByText(/Enable overwrite to replace these existing files/)).toBeTruthy();
+  });
 
-    expect(screen.getAllByText("...and 2 more")).toHaveLength(2);
+  it("shows inline checking status and disables editing while checking preflight conflicts", () => {
+    renderDialog({ checking: true });
+
+    expect((screen.getByRole("button", { name: "Checking..." }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Checking destination for conflicts...")).toBeTruthy();
+    expect((screen.getByRole("radio", { name: /Extract here/ }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("checkbox", { name: /Allow overwriting existing files/ }) as HTMLInputElement).disabled).toBe(true);
   });
 });

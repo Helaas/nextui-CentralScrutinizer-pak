@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 
-import { parseZipFile, uploadSelectionFromZip } from "./zip-upload";
+import { parseZipFile, uploadPathsFromZip, uploadSelectionFromZip } from "./zip-upload";
 
 async function makeZipFile(name: string, build: (zip: JSZip) => void): Promise<File> {
   const zip = new JSZip();
@@ -29,6 +29,7 @@ describe("parseZipFile", () => {
     expect(preview.commonRoot).toBe("Favorites");
     expect(preview.totalFiles).toBe(1);
     expect(preview.totalDirectories).toBe(3);
+    expect(preview.archiveFileName).toBe("favorites.zip");
     expect(preview.zipNameWithoutExtension).toBe("favorites");
     expect(preview.entries).toHaveLength(4);
   });
@@ -71,6 +72,17 @@ describe("parseZipFile", () => {
 
     expect(preview.entries).toHaveLength(0);
     expect(preview.commonRoot).toBeNull();
+  });
+
+  it("strips .pakz when building the wrapper folder name", async () => {
+    const file = await makeZipFile("Central.Scrutinizer.pakz", (zip) => {
+      zip.file("Tools/tg5040/Central Scrutinizer.pak/pak.json", "{}");
+    });
+
+    const preview = await parseZipFile(file);
+
+    expect(preview.archiveFileName).toBe("Central.Scrutinizer.pakz");
+    expect(preview.zipNameWithoutExtension).toBe("Central.Scrutinizer");
   });
 });
 
@@ -127,6 +139,21 @@ describe("uploadSelectionFromZip", () => {
     expect(relativePaths(selection.files)).toEqual(["Loose Files/readme.txt"]);
   });
 
+  it("preserve-full-path keeps archive roots exactly as stored", async () => {
+    const file = await makeZipFile("Central.Scrutinizer.pakz", (zip) => {
+      zip.folder("Tools")?.folder("tg5040")?.folder("Central Scrutinizer.pak");
+      zip.file("Tools/tg5040/Central Scrutinizer.pak/pak.json", "{}");
+    });
+
+    const preview = await parseZipFile(file);
+    const selection = await uploadSelectionFromZip(preview, "preserve-full-path");
+
+    expect(selection.directories).toContain("Tools");
+    expect(selection.directories).toContain("Tools/tg5040");
+    expect(selection.directories).toContain("Tools/tg5040/Central Scrutinizer.pak");
+    expect(relativePaths(selection.files)).toEqual(["Tools/tg5040/Central Scrutinizer.pak/pak.json"]);
+  });
+
   it("skips macOS artifacts for both strategies", async () => {
     const file = await makeZipFile("clean.zip", (zip) => {
       zip.folder("__MACOSX")?.file("._readme.txt", "sidecar");
@@ -156,5 +183,19 @@ describe("uploadSelectionFromZip", () => {
     const selection = await uploadSelectionFromZip(preview, "extract-here");
 
     expect(selection.directories).toContain("trailing-space ");
+  });
+
+  it("only previews explicit empty directories for conflict preflight", async () => {
+    const file = await makeZipFile("favorites.zip", (zip) => {
+      zip.folder("Favorites")?.folder("Empty");
+      zip.file("Favorites/GBA/Pokemon Emerald.gba", "rom");
+    });
+
+    const preview = await parseZipFile(file);
+    const uploadPaths = uploadPathsFromZip(preview, "extract-into-folder");
+
+    expect(uploadPaths.directories).toEqual(["favorites", "favorites/Empty", "favorites/GBA"]);
+    expect(uploadPaths.explicitDirectories).toEqual(["favorites/Empty"]);
+    expect(uploadPaths.filePaths).toEqual(["favorites/GBA/Pokemon Emerald.gba"]);
   });
 });

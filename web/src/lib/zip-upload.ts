@@ -13,6 +13,7 @@ export type ParsedZipPreview = {
   commonRoot: string | null;
   totalFiles: number;
   totalDirectories: number;
+  archiveFileName: string;
   zipNameWithoutExtension: string;
 };
 
@@ -32,7 +33,7 @@ function normalizeArchivePath(path: string, isDirectory: boolean): string {
 }
 
 export function archiveRootFromFileName(name: string): string {
-  const withoutExtension = name.replace(/\.zip$/i, "").trim();
+  const withoutExtension = name.replace(/\.(zip|pakz)$/i, "").trim();
   const normalized = withoutExtension
     .replace(/[\\/]+/g, "-")
     .replace(/[\x00-\x1f]/g, "-")
@@ -110,7 +111,7 @@ export function computeUploadPath(
   preview: Pick<ParsedZipPreview, "commonRoot" | "zipNameWithoutExtension">,
   strategy: ExtractStrategy,
 ): string {
-  let uploadPath = stripCommonRoot(entryPath, preview.commonRoot);
+  let uploadPath = strategy === "preserve-full-path" ? entryPath : stripCommonRoot(entryPath, preview.commonRoot);
 
   if (strategy === "extract-into-folder") {
     uploadPath = applyWrapper(uploadPath, preview.zipNameWithoutExtension);
@@ -154,17 +155,22 @@ export async function parseZipFile(file: File): Promise<ParsedZipPreview> {
     commonRoot,
     totalFiles,
     totalDirectories,
+    archiveFileName: file.name,
     zipNameWithoutExtension: archiveRootFromFileName(file.name),
   };
 }
 
-export async function uploadSelectionFromZip(
-  preview: ParsedZipPreview,
-  strategy: ExtractStrategy,
-): Promise<UploadSelection> {
+export type ZipUploadPaths = {
+  directories: string[];
+  explicitDirectories: string[];
+  filePaths: string[];
+};
+
+export function uploadPathsFromZip(preview: ParsedZipPreview, strategy: ExtractStrategy): ZipUploadPaths {
   const { entries, commonRoot, zipNameWithoutExtension } = preview;
   const directories = new Set<string>();
-  const files: File[] = [];
+  const archiveDirectories = new Set<string>();
+  const filePaths: string[] = [];
 
   for (const entry of entries) {
     const uploadPath = computeUploadPath(entry.path, { commonRoot, zipNameWithoutExtension }, strategy);
@@ -175,10 +181,44 @@ export async function uploadSelectionFromZip(
 
     if (entry.kind === "directory") {
       directories.add(uploadPath);
+      archiveDirectories.add(uploadPath);
       continue;
     }
 
     addParentDirectories(uploadPath, directories);
+    filePaths.push(uploadPath);
+  }
+
+  const explicitDirectories = Array.from(archiveDirectories).filter(
+    (directory) => !filePaths.some((filePath) => filePath.startsWith(`${directory}/`)),
+  );
+
+  return {
+    directories: Array.from(directories),
+    explicitDirectories,
+    filePaths,
+  };
+}
+
+export async function uploadSelectionFromZip(
+  preview: ParsedZipPreview,
+  strategy: ExtractStrategy,
+): Promise<UploadSelection> {
+  const { entries, commonRoot, zipNameWithoutExtension } = preview;
+  const { directories } = uploadPathsFromZip(preview, strategy);
+  const files: File[] = [];
+
+  for (const entry of entries) {
+    const uploadPath = computeUploadPath(entry.path, { commonRoot, zipNameWithoutExtension }, strategy);
+
+    if (!uploadPath) {
+      continue;
+    }
+
+    if (entry.kind === "directory") {
+      continue;
+    }
+
     const leaf = uploadPath.split("/").pop() ?? entry.path;
     const blob = await entry.zipObject.async("blob");
     const uploadFile = new File([blob], leaf, {
@@ -196,7 +236,7 @@ export async function uploadSelectionFromZip(
   }
 
   return {
-    directories: Array.from(directories),
+    directories,
     files,
   };
 }

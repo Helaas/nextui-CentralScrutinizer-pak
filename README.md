@@ -8,7 +8,7 @@ It runs an HTTP server while the pak is open, and it can hand that server off to
 
 - Shows your library grouped by platform family with dedicated console icons, emulator availability warnings, and installed/all emulator filters
 - Lets you browse ROMs, saves, save-state bundles, BIOS, overlays, and cheats by system
-- Supports upload, download, rename, delete, and folder creation where the current workspace allows it, including ZIP uploads for exact folder preservation
+- Supports upload, download, rename, delete, and folder creation where the current workspace allows it, including ZIP and `.pakz` uploads with selectable extraction modes
 - Lets you replace ROM artwork from the browser with PNG files
 - Includes a full SD card file browser workspace
 - Includes collection management for `Collections/*.txt` playlists, collection icons, and shared collection background art
@@ -98,8 +98,13 @@ Folder uploads are available in ROM workspaces and the File Browser.
 - **Upload File** uploads the selected files exactly as files. If you select a `.zip` there, Central Scrutinizer uploads the `.zip` file itself and does not extract it.
 - **Upload Folder** uses your browser's native folder picker. It preserves files and normal folder structure, but some browser folder pickers do not report completely empty folders.
 - Dragging and dropping a folder into a supported workspace preserves the dropped folder tree, including empty folders, when the browser exposes dropped directory entries.
-- **Upload ZIP** is the reliable Chrome, Safari, and Firefox option for preserving empty folders from the upload buttons. Central Scrutinizer extracts the ZIP in your browser before upload, keeps a single archive root folder when the ZIP has one, wraps loose archive contents in a folder named after the ZIP, and skips common macOS archive artifacts such as `__MACOSX/`, `.DS_Store`, and `._*` files.
-- Existing folders are merged. Existing files are not overwritten. If an upload is cancelled or a later file batch fails, any folders and earlier files that already uploaded remain in place, and the browser refreshes with the upload result.
+- **Upload ZIP** accepts both `.zip` and `.pakz` archives. Central Scrutinizer extracts the archive in your browser before upload, skips common macOS archive artifacts such as `__MACOSX/`, `.DS_Store`, and `._*` files, and then lets you choose one of three extraction modes:
+  1. **Extract here** strips a single shared archive root when one exists and uploads the contents into the current folder.
+  2. **Extract into folder** uses the same root-stripping behavior, then wraps the extracted contents in a folder named after the archive.
+  3. **Preserve full archive path** keeps the archive paths exactly as stored, which is the safest option for deployment archives such as `Central Scrutinizer.pakz` that intentionally include top-level paths like `Tools/...`.
+- Before any extracted files are uploaded, Central Scrutinizer runs a conflict preview. Existing folders are merged automatically. Existing files are only replaced when you explicitly enable **Overwrite existing files** in the extract dialog.
+- File-versus-folder conflicts are always blocked instead of deleting the existing destination tree. The dialog shows a short conflict summary and preview list before you commit the extract.
+- If an upload is cancelled or a later file batch fails, any folders and earlier files that already uploaded remain in place, and the browser refreshes with the upload result.
 
 ## Handheld Settings
 

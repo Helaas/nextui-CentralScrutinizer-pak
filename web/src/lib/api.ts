@@ -12,6 +12,8 @@ import type {
   SessionResponse,
   StatusResponse,
   TerminalSessionResponse,
+  UploadPreviewRequest,
+  UploadPreviewResponse,
   UploadRequest,
   WriteRequest,
 } from "./types";
@@ -46,6 +48,7 @@ export type UploadSummary = {
   directoriesCreated: number;
   directoriesFailed: number;
   cancelled: boolean;
+  errorMessage?: string | null;
 };
 
 export type UploadBatchedHandle = {
@@ -117,6 +120,24 @@ async function readErrorCode(response: Response): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+function parseUploadError(xhr: XMLHttpRequest): Error {
+  try {
+    const body = JSON.parse(xhr.responseText) as { error?: string; path?: string };
+    const pathLabel = typeof body.path === "string" && body.path.length > 0 ? ` "${body.path}"` : "";
+
+    if (body.error === "upload_conflict") {
+      return new ApiError(`Upload blocked because${pathLabel} already exists.`, xhr.status, body.error);
+    }
+    if (body.error === "upload_type_conflict") {
+      return new ApiError(`Upload blocked because${pathLabel} conflicts with an existing file or folder.`, xhr.status, body.error);
+    }
+  } catch {
+    // Ignore non-JSON upload failures.
+  }
+
+  return new Error("Upload failed");
 }
 
 export function buildDownloadUrl(scope: BrowserScope, path: string, tag?: string, csrf?: string | null): string {
@@ -269,6 +290,92 @@ export async function searchFiles(path: string | undefined, query: string, csrf:
   return expectJson<FileSearchResponse>(response, "File search failed");
 }
 
+type PreviewUploadOptions = {
+  signal?: AbortSignal;
+};
+
+export async function previewUpload(
+  request: UploadPreviewRequest,
+  csrf: string,
+  options?: PreviewUploadOptions,
+): Promise<UploadPreviewResponse> {
+  const form = new FormData();
+
+  form.set("scope", request.scope);
+  if (request.tag) {
+    form.set("tag", request.tag);
+  }
+  if (request.path) {
+    form.set("path", request.path);
+  }
+  for (const directory of request.directories ?? []) {
+    form.append("directory", directory);
+  }
+  for (const filePath of request.filePaths) {
+    form.append("file_path", filePath);
+  }
+
+  const response = await fetch("/api/upload/preview", {
+    method: "POST",
+    headers: csrfHeaders(csrf),
+    body: form,
+    signal: options?.signal,
+  });
+
+  return expectJson<UploadPreviewResponse>(response, "Upload preview failed");
+}
+
+export async function previewUploadBatched(
+  request: UploadPreviewRequest,
+  csrf: string,
+  options?: PreviewUploadOptions,
+): Promise<UploadPreviewResponse> {
+  const { directories = [], filePaths, ...rest } = request;
+  const overwriteable: UploadPreviewResponse["overwriteable"] = [];
+  const blocking: UploadPreviewResponse["blocking"] = [];
+  let overwriteableCount = 0;
+  let blockingCount = 0;
+
+  const appendUnique = <T extends { path: string; kind: string }>(target: T[], items: T[]) => {
+    const seen = new Set(target.map((item) => `${item.kind}:${item.path}`));
+
+    for (const item of items) {
+      const key = `${item.kind}:${item.path}`;
+
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      if (target.length >= 5) {
+        continue;
+      }
+      target.push(item);
+    }
+  };
+
+  for (let offset = 0; offset < directories.length; offset += UPLOAD_BATCH_SIZE) {
+    const batch = directories.slice(offset, offset + UPLOAD_BATCH_SIZE);
+    const response = await previewUpload({ ...rest, directories: batch, filePaths: [] }, csrf, options);
+
+    overwriteableCount += response.overwriteableCount;
+    blockingCount += response.blockingCount;
+    appendUnique(overwriteable, response.overwriteable);
+    appendUnique(blocking, response.blocking);
+  }
+
+  for (let offset = 0; offset < filePaths.length; offset += UPLOAD_BATCH_SIZE) {
+    const batch = filePaths.slice(offset, offset + UPLOAD_BATCH_SIZE);
+    const response = await previewUpload({ ...rest, directories: [], filePaths: batch }, csrf, options);
+
+    overwriteableCount += response.overwriteableCount;
+    blockingCount += response.blockingCount;
+    appendUnique(overwriteable, response.overwriteable);
+    appendUnique(blocking, response.blocking);
+  }
+
+  return { overwriteableCount, blockingCount, overwriteable, blocking };
+}
+
 export function beginUploadFiles(
   request: UploadRequest,
   csrf: string,
@@ -283,6 +390,9 @@ export function beginUploadFiles(
     }
     if (request.path) {
       form.set("path", request.path);
+    }
+    if (request.overwriteExisting) {
+      form.set("overwrite", "1");
     }
     for (const directory of request.directories ?? []) {
       form.append("directory", directory);
@@ -305,7 +415,7 @@ export function beginUploadFiles(
         resolve();
         return;
       }
-      reject(new Error("Upload failed"));
+      reject(parseUploadError(xhr));
     });
     xhr.addEventListener("error", () => reject(new Error("Upload failed")));
     xhr.addEventListener("abort", () => reject(new UploadAbortedError()));
@@ -359,6 +469,7 @@ export function beginUploadFilesBatched(
     let failed = 0;
     let directoriesCreated = 0;
     let directoriesFailed = 0;
+    let errorMessage: string | null = null;
 
     const reportProgress = (workDone: number) => {
       if (onProgress && totalWork > 0) {
@@ -383,6 +494,7 @@ export function beginUploadFilesBatched(
           cancelled = true;
         } else {
           directoriesFailed += batch.length;
+          errorMessage = error instanceof Error ? error.message : errorMessage;
         }
       } finally {
         activeHandle = null;
@@ -416,6 +528,7 @@ export function beginUploadFilesBatched(
           cancelled = true;
         } else {
           failed += batch.length;
+          errorMessage = error instanceof Error ? error.message : errorMessage;
         }
       } finally {
         activeHandle = null;
@@ -425,7 +538,7 @@ export function beginUploadFilesBatched(
       reportProgress(completedWork);
     }
 
-    return { uploaded, failed, directoriesCreated, directoriesFailed, cancelled };
+    return { uploaded, failed, directoriesCreated, directoriesFailed, cancelled, errorMessage };
   })();
 
   return {

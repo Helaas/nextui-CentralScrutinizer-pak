@@ -37,6 +37,7 @@ NORMALIZED_PARENT_UPLOADED_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinize
 NORMALIZED_DOT_SEGMENT_UPLOADED_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/$NORMALIZED_DOT_SEGMENT_NOTE_UPLOAD_NAME"
 NORMALIZED_DOUBLE_SEPARATOR_UPLOADED_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/Favorites/$NORMALIZED_DOUBLE_SEPARATOR_NOTE_UPLOAD_NAME"
 EMPTY_FILENAME_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/empty-filename-should-not-exist.txt"
+NOTE_UPLOAD_FINAL_PATH=".userdata/shared/CentralScrutinizer/imports/$NOTE_UPLOAD_RELATIVE_PATH"
 PARALLEL_CLIENT_NAME="parallel-$RANDOM-$$.txt"
 PARALLEL_PATH_A=".userdata/shared/CentralScrutinizer/imports/parallel-a"
 PARALLEL_PATH_B=".userdata/shared/CentralScrutinizer/imports/parallel-b"
@@ -280,9 +281,52 @@ UPLOAD_RESPONSE="$(curl -sS -X POST \
     -w '\n%{http_code}' \
     http://127.0.0.1:8877/api/upload)"
 
-echo "$UPLOAD_RESPONSE" | head -n 1 | grep -Fq '{"ok":false}'
-echo "$UPLOAD_RESPONSE" | tail -n 1 | grep -q '^500$'
+printf '%s\n' "$UPLOAD_RESPONSE" | grep -Fq '{"ok":false,"error":"upload_conflict"'
+printf '%s\n' "$UPLOAD_RESPONSE" | grep -Fq "\"path\":\"$NOTE_UPLOAD_FINAL_PATH\""
+echo "$UPLOAD_RESPONSE" | tail -n 1 | grep -q '^409$'
 cmp -s "$SOURCE_NOTE" "$UPLOADED_NOTE"
+
+PREVIEW_RESPONSE="$(curl -sS -X POST \
+    -b "$COOKIE_JAR" \
+    -H "X-CS-CSRF: $CSRF_TOKEN" \
+    -F "scope=files" \
+    -F "path=.userdata/shared/CentralScrutinizer/imports" \
+    -F "file_path=$NOTE_UPLOAD_RELATIVE_PATH" \
+    -w '\n%{http_code}' \
+    http://127.0.0.1:8877/api/upload/preview)"
+
+printf '%s\n' "$PREVIEW_RESPONSE" | grep -Fq '"overwriteableCount":1'
+printf '%s\n' "$PREVIEW_RESPONSE" | grep -Fq "\"path\":\"$NOTE_UPLOAD_FINAL_PATH\""
+printf '%s\n' "$PREVIEW_RESPONSE" | grep -Fq '"kind":"overwrite"'
+echo "$PREVIEW_RESPONSE" | tail -n 1 | grep -q '^200$'
+
+UPLOAD_RESPONSE="$(curl -sS -X POST \
+    -b "$COOKIE_JAR" \
+    -H "X-CS-CSRF: $CSRF_TOKEN" \
+    -F "scope=files" \
+    -F "path=.userdata/shared/CentralScrutinizer/imports" \
+    -F "overwrite=1" \
+    -F "file=@$SOURCE_NOTE_B;filename=$NOTE_UPLOAD_RELATIVE_PATH" \
+    -w '\n%{http_code}' \
+    http://127.0.0.1:8877/api/upload)"
+
+echo "$UPLOAD_RESPONSE" | head -n 1 | grep -Fq '{"ok":true}'
+echo "$UPLOAD_RESPONSE" | tail -n 1 | grep -q '^200$'
+cmp -s "$SOURCE_NOTE_B" "$UPLOADED_NOTE"
+
+PREVIEW_RESPONSE="$(curl -sS -X POST \
+    -b "$COOKIE_JAR" \
+    -H "X-CS-CSRF: $CSRF_TOKEN" \
+    -F "scope=files" \
+    -F "path=.userdata/shared/CentralScrutinizer/imports" \
+    -F "directory=$NOTE_UPLOAD_RELATIVE_PATH" \
+    -w '\n%{http_code}' \
+    http://127.0.0.1:8877/api/upload/preview)"
+
+printf '%s\n' "$PREVIEW_RESPONSE" | grep -Fq '"blockingCount":1'
+printf '%s\n' "$PREVIEW_RESPONSE" | grep -Fq "\"path\":\"$NOTE_UPLOAD_FINAL_PATH\""
+printf '%s\n' "$PREVIEW_RESPONSE" | grep -Fq '"kind":"directory-over-file"'
+echo "$PREVIEW_RESPONSE" | tail -n 1 | grep -q '^200$'
 
 # CivetWeb normalizes some malformed multipart filenames before our callback
 # sees them, so these uploads must stay rooted inside the requested import

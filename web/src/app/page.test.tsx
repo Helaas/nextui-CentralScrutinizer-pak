@@ -33,6 +33,7 @@ const mockApi = vi.hoisted(() => ({
   getSession: vi.fn(),
   pairBrowser: vi.fn(),
   pairBrowserQr: vi.fn(),
+  previewUploadBatched: vi.fn(),
   readTextFile: vi.fn(),
   replaceArt: vi.fn(),
   renameItem: vi.fn(),
@@ -357,6 +358,76 @@ async function openTools() {
 async function openFileBrowserTool() {
   await openTools();
   fireEvent.click(await screen.findByRole("button", { name: /File Browser/ }));
+}
+
+function makeZipPreview(
+  overrides: Partial<{
+    archiveFileName: string;
+    commonRoot: string;
+    entries: Array<{ kind: "directory" | "file"; path: string; zipObject: object }>;
+    totalDirectories: number;
+    totalFiles: number;
+    zipNameWithoutExtension: string;
+  }> = {},
+) {
+  return {
+    archiveFileName: "Archive.zip",
+    commonRoot: "Root",
+    entries: [
+      { kind: "directory" as const, path: "Root", zipObject: {} },
+      { kind: "directory" as const, path: "Root/Empty", zipObject: {} },
+      { kind: "file" as const, path: "Root/GBA/Pokemon Emerald.gba", zipObject: {} },
+    ],
+    totalDirectories: 2,
+    totalFiles: 1,
+    zipNameWithoutExtension: "Archive",
+    ...overrides,
+  };
+}
+
+function makeZipExtractedFile(relativePath = "Archive/GBA/Pokemon Emerald.gba") {
+  const extractedFile = new File(["rom"], "Pokemon Emerald.gba", { type: "application/octet-stream" }) as File & {
+    webkitRelativePath?: string;
+  };
+
+  Object.defineProperty(extractedFile, "webkitRelativePath", {
+    configurable: true,
+    value: relativePath,
+  });
+  return extractedFile;
+}
+
+function mockZipPicker(zipFile: File) {
+  const originalCreateElement = document.createElement.bind(document);
+
+  return vi.spyOn(document, "createElement").mockImplementation(((tagName: string, options?: ElementCreationOptions) => {
+    const element = originalCreateElement(tagName, options);
+
+    if (tagName.toLowerCase() !== "input") {
+      return element;
+    }
+
+    const input = element as HTMLInputElement & { webkitdirectory?: boolean };
+
+    Object.defineProperty(input, "webkitdirectory", {
+      configurable: true,
+      enumerable: true,
+      value: false,
+      writable: true,
+    });
+
+    input.click = () => {
+      if (input.accept.includes(".zip")) {
+        Object.defineProperty(input, "files", {
+          configurable: true,
+          value: createFileList([zipFile]),
+        });
+        fireEvent.change(input);
+      }
+    };
+
+    return input;
+  }) as typeof document.createElement);
 }
 
 describe("Page", () => {
@@ -1135,66 +1206,33 @@ describe("Page", () => {
 
   it("uploads ZIP fallback selections from the file browser tool", async () => {
     const zipFile = new File(["zip"], "Archive.zip", { type: "application/zip" });
-    const extractedFile = new File(["rom"], "Pokemon Emerald.gba", { type: "application/octet-stream" }) as File & {
-      webkitRelativePath?: string;
-    };
-    const originalCreateElement = document.createElement.bind(document);
+    const extractedFile = makeZipExtractedFile();
 
-    Object.defineProperty(extractedFile, "webkitRelativePath", {
-      configurable: true,
-      value: "Archive/GBA/Pokemon Emerald.gba",
-    });
-    mockZipUpload.parseZipFile.mockResolvedValue({
-      commonRoot: "Root",
-      entries: [
-        { kind: "directory", path: "Root", zipObject: {} },
-        { kind: "directory", path: "Root/Empty", zipObject: {} },
-        { kind: "file", path: "Root/GBA/Pokemon Emerald.gba", zipObject: {} },
-      ],
-      totalDirectories: 2,
-      totalFiles: 1,
-      zipNameWithoutExtension: "Archive",
-    });
+    mockZipUpload.parseZipFile.mockResolvedValue(makeZipPreview());
     mockZipUpload.uploadSelectionFromZip.mockResolvedValue({
       directories: ["Archive", "Archive/Empty", "Archive/GBA"],
       files: [extractedFile],
     });
-
-    vi.spyOn(document, "createElement").mockImplementation(((tagName: string, options?: ElementCreationOptions) => {
-      const element = originalCreateElement(tagName, options);
-
-      if (tagName.toLowerCase() !== "input") {
-        return element;
-      }
-
-      const input = element as HTMLInputElement & { webkitdirectory?: boolean };
-
-      Object.defineProperty(input, "webkitdirectory", {
-        configurable: true,
-        enumerable: true,
-        value: false,
-        writable: true,
-      });
-
-      input.click = () => {
-        if (input.accept.includes(".zip")) {
-          Object.defineProperty(input, "files", {
-            configurable: true,
-            value: createFileList([zipFile]),
-          });
-          fireEvent.change(input);
-        }
-      };
-
-      return input;
-    }) as typeof document.createElement);
-
+    mockZipPicker(zipFile);
     mockApi.getSession.mockResolvedValue(pairedSession());
     mockApi.getPlatforms.mockResolvedValue(platformGroups());
     mockApi.getBrowser.mockResolvedValue(fileBrowserResponse());
+    mockApi.previewUploadBatched.mockResolvedValue({
+      overwriteable: [],
+      overwriteableCount: 0,
+      blocking: [],
+      blockingCount: 0,
+    });
     mockApi.beginUploadFilesBatched.mockReturnValue({
       cancel: vi.fn(),
-      promise: Promise.resolve({ uploaded: 1, failed: 0, directoriesCreated: 3, directoriesFailed: 0, cancelled: false }),
+      promise: Promise.resolve({
+        uploaded: 1,
+        failed: 0,
+        directoriesCreated: 3,
+        directoriesFailed: 0,
+        cancelled: false,
+        errorMessage: null,
+      }),
     });
 
     render(<Page />);
@@ -1209,16 +1247,241 @@ describe("Page", () => {
       expect.objectContaining({ commonRoot: "Root", zipNameWithoutExtension: "Archive" }),
       "extract-into-folder",
     );
+    expect(mockApi.previewUploadBatched).toHaveBeenCalledWith(
+      expect.objectContaining({
+        directories: ["Archive/Empty"],
+        filePaths: ["Archive/GBA/Pokemon Emerald.gba"],
+        path: undefined,
+        scope: "files",
+      }),
+      "csrf-token",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(mockApi.beginUploadFilesBatched).toHaveBeenCalledWith(
       expect.objectContaining({
         directories: ["Archive", "Archive/Empty", "Archive/GBA"],
         files: [extractedFile],
+        overwriteExisting: false,
         path: undefined,
         scope: "files",
       }),
       "csrf-token",
       expect.any(Function),
     );
+  });
+
+  it("keeps the ZIP dialog open and shows blocking conflicts", async () => {
+    const zipFile = new File(["zip"], "Archive.zip", { type: "application/zip" });
+
+    mockZipUpload.parseZipFile.mockResolvedValue(makeZipPreview());
+    mockZipPicker(zipFile);
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser.mockResolvedValue(fileBrowserResponse());
+    mockApi.previewUploadBatched.mockResolvedValue({
+      overwriteable: [],
+      overwriteableCount: 0,
+      blocking: [{ kind: "file-over-directory", path: "Archive/GBA" }],
+      blockingCount: 1,
+    });
+
+    render(<Page />);
+
+    await openFileBrowserTool();
+    fireEvent.click(await screen.findByRole("button", { name: "Upload ZIP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Extract" }));
+
+    await screen.findByText("Some paths need attention before extraction can continue.");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(mockZipUpload.uploadSelectionFromZip).not.toHaveBeenCalled();
+    expect(mockApi.beginUploadFilesBatched).not.toHaveBeenCalled();
+  });
+
+  it("requires overwrite approval, then re-runs preflight and uploads", async () => {
+    const zipFile = new File(["zip"], "Archive.zip", { type: "application/zip" });
+    const extractedFile = makeZipExtractedFile();
+    const overwriteableConflict = {
+      overwriteable: [{ kind: "overwrite" as const, path: "Archive/GBA/Pokemon Emerald.gba" }],
+      overwriteableCount: 1,
+      blocking: [],
+      blockingCount: 0,
+    };
+
+    mockZipUpload.parseZipFile.mockResolvedValue(makeZipPreview());
+    mockZipUpload.uploadSelectionFromZip.mockResolvedValue({
+      directories: ["Archive", "Archive/Empty", "Archive/GBA"],
+      files: [extractedFile],
+    });
+    mockZipPicker(zipFile);
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser.mockResolvedValue(fileBrowserResponse());
+    mockApi.previewUploadBatched.mockResolvedValueOnce(overwriteableConflict).mockResolvedValueOnce(overwriteableConflict);
+    mockApi.beginUploadFilesBatched.mockReturnValue({
+      cancel: vi.fn(),
+      promise: Promise.resolve({
+        uploaded: 1,
+        failed: 0,
+        directoriesCreated: 3,
+        directoriesFailed: 0,
+        cancelled: false,
+        errorMessage: null,
+      }),
+    });
+
+    render(<Page />);
+
+    await openFileBrowserTool();
+    fireEvent.click(await screen.findByRole("button", { name: "Upload ZIP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Extract" }));
+
+    await screen.findByText("Enable overwrite to replace these existing files.");
+    fireEvent.click(screen.getByRole("checkbox", { name: /Allow overwriting existing files/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Extract" }));
+
+    await screen.findByText("Uploaded 1 file and 3 folders.");
+    expect(mockApi.previewUploadBatched).toHaveBeenCalledTimes(2);
+    expect(mockApi.beginUploadFilesBatched).toHaveBeenCalledWith(
+      expect.objectContaining({
+        overwriteExisting: true,
+      }),
+      "csrf-token",
+      expect.any(Function),
+    );
+  });
+
+  it("supports preserve-full-path ZIP extraction end-to-end", async () => {
+    const zipFile = new File(["zip"], "Central.Scrutinizer.pakz", { type: "application/zip" });
+    const extractedFile = makeZipExtractedFile("Tools/tg5040/Central Scrutinizer.pak/pak.json");
+
+    mockZipUpload.parseZipFile.mockResolvedValue(
+      makeZipPreview({
+        archiveFileName: "Central.Scrutinizer.pakz",
+        commonRoot: "Tools",
+        entries: [
+          { kind: "directory", path: "Tools", zipObject: {} },
+          { kind: "directory", path: "Tools/tg5040", zipObject: {} },
+          { kind: "directory", path: "Tools/tg5040/Central Scrutinizer.pak", zipObject: {} },
+          { kind: "file", path: "Tools/tg5040/Central Scrutinizer.pak/pak.json", zipObject: {} },
+        ],
+        totalDirectories: 3,
+        totalFiles: 1,
+        zipNameWithoutExtension: "Central.Scrutinizer",
+      }),
+    );
+    mockZipUpload.uploadSelectionFromZip.mockResolvedValue({
+      directories: ["Tools", "Tools/tg5040", "Tools/tg5040/Central Scrutinizer.pak"],
+      files: [extractedFile],
+    });
+    mockZipPicker(zipFile);
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser.mockResolvedValue(fileBrowserResponse());
+    mockApi.previewUploadBatched.mockResolvedValue({
+      overwriteable: [],
+      overwriteableCount: 0,
+      blocking: [],
+      blockingCount: 0,
+    });
+    mockApi.beginUploadFilesBatched.mockReturnValue({
+      cancel: vi.fn(),
+      promise: Promise.resolve({
+        uploaded: 1,
+        failed: 0,
+        directoriesCreated: 3,
+        directoriesFailed: 0,
+        cancelled: false,
+        errorMessage: null,
+      }),
+    });
+
+    render(<Page />);
+
+    await openFileBrowserTool();
+    fireEvent.click(await screen.findByRole("button", { name: "Upload ZIP" }));
+    fireEvent.click(await screen.findByRole("radio", { name: /Preserve full archive path/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Extract" }));
+
+    await screen.findByText("Uploaded 1 file and 3 folders.");
+    expect(mockZipUpload.uploadSelectionFromZip).toHaveBeenCalledWith(
+      expect.objectContaining({ archiveFileName: "Central.Scrutinizer.pakz" }),
+      "preserve-full-path",
+    );
+    expect(mockApi.previewUploadBatched).toHaveBeenCalledWith(
+      expect.objectContaining({
+        directories: [],
+        filePaths: ["Tools/tg5040/Central Scrutinizer.pak/pak.json"],
+        path: undefined,
+        scope: "files",
+      }),
+      "csrf-token",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("times out a stuck ZIP preview request and keeps the dialog open", async () => {
+    const zipFile = new File(["zip"], "Archive.zip", { type: "application/zip" });
+
+    mockZipUpload.parseZipFile.mockResolvedValue(makeZipPreview());
+    mockZipPicker(zipFile);
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser.mockResolvedValue(fileBrowserResponse());
+    mockApi.previewUploadBatched.mockImplementation(
+      (_request: unknown, _csrf: string, options?: { signal?: AbortSignal }) =>
+        new Promise((_, reject) => {
+          options?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          }, { once: true });
+        }),
+    );
+
+    render(<Page />);
+
+    await openFileBrowserTool();
+    fireEvent.click(await screen.findByRole("button", { name: "Upload ZIP" }));
+    await screen.findByRole("button", { name: "Extract" });
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Extract" }));
+    expect(screen.getByText("Checking destination for conflicts...")).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+
+    await act(async () => {});
+    expect(screen.getByText("ZIP conflict check timed out.")).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(mockApi.beginUploadFilesBatched).not.toHaveBeenCalled();
+  });
+
+  it("shows server error details when an upload partially fails", async () => {
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser.mockResolvedValue(fileBrowserResponse());
+    mockApi.beginUploadFilesBatched.mockReturnValue({
+      cancel: vi.fn(),
+      promise: Promise.resolve({
+        uploaded: 1,
+        failed: 1,
+        directoriesCreated: 0,
+        directoriesFailed: 0,
+        cancelled: false,
+        errorMessage: 'Upload blocked because "Favorites/GBA/conflict.sav" already exists.',
+      }),
+    });
+
+    render(<Page />);
+
+    await openFileBrowserTool();
+    expect(await screen.findByRole("button", { name: "Upload File" })).toBeTruthy();
+    const uploadInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const uploadFileA = new File(["save-a"], "state-a.sav", { type: "application/octet-stream" });
+    const uploadFileB = new File(["save-b"], "state-b.sav", { type: "application/octet-stream" });
+
+    fireEvent.change(uploadInput, { target: { files: createFileList([uploadFileA, uploadFileB]) } });
+
+    await screen.findByText('Uploaded 1 file, 1 file failed. Upload blocked because "Favorites/GBA/conflict.sav" already exists.');
   });
 
   it("shows a cancel action for uploads and reports when the upload is cancelled", async () => {
