@@ -367,6 +367,7 @@ function makeZipPreview(
     entries: Array<{ kind: "directory" | "file"; path: string; zipObject: object }>;
     totalDirectories: number;
     totalFiles: number;
+    totalUncompressedBytes: number;
     zipNameWithoutExtension: string;
   }> = {},
 ) {
@@ -380,6 +381,7 @@ function makeZipPreview(
     ],
     totalDirectories: 2,
     totalFiles: 1,
+    totalUncompressedBytes: 3,
     zipNameWithoutExtension: "Archive",
     ...overrides,
   };

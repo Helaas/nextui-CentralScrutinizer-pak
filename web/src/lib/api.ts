@@ -56,6 +56,8 @@ export type UploadBatchedHandle = {
   promise: Promise<UploadSummary>;
 };
 
+const UPLOAD_PREVIEW_DISPLAY_LIMIT = 5;
+
 export const PAIRING_UNAVAILABLE_MESSAGE =
   "Pairing is unavailable while the app is running in background mode. Reopen it on the handheld to pair or change settings.";
 
@@ -333,20 +335,18 @@ export async function previewUploadBatched(
   const { directories = [], filePaths, ...rest } = request;
   const overwriteable: UploadPreviewResponse["overwriteable"] = [];
   const blocking: UploadPreviewResponse["blocking"] = [];
-  let overwriteableCount = 0;
-  let blockingCount = 0;
+  const allOverwriteable = new Map<string, UploadPreviewResponse["overwriteable"][number]>();
+  const allBlocking = new Map<string, UploadPreviewResponse["blocking"][number]>();
 
-  const appendUnique = <T extends { path: string; kind: string }>(target: T[], items: T[]) => {
-    const seen = new Set(target.map((item) => `${item.kind}:${item.path}`));
-
+  const appendUnique = <T extends { path: string; kind: string }>(allItems: Map<string, T>, target: T[], items: T[]) => {
     for (const item of items) {
       const key = `${item.kind}:${item.path}`;
 
-      if (seen.has(key)) {
+      if (allItems.has(key)) {
         continue;
       }
-      seen.add(key);
-      if (target.length >= 5) {
+      allItems.set(key, item);
+      if (target.length >= UPLOAD_PREVIEW_DISPLAY_LIMIT) {
         continue;
       }
       target.push(item);
@@ -357,23 +357,24 @@ export async function previewUploadBatched(
     const batch = directories.slice(offset, offset + UPLOAD_BATCH_SIZE);
     const response = await previewUpload({ ...rest, directories: batch, filePaths: [] }, csrf, options);
 
-    overwriteableCount += response.overwriteableCount;
-    blockingCount += response.blockingCount;
-    appendUnique(overwriteable, response.overwriteable);
-    appendUnique(blocking, response.blocking);
+    appendUnique(allOverwriteable, overwriteable, response.overwriteable);
+    appendUnique(allBlocking, blocking, response.blocking);
   }
 
   for (let offset = 0; offset < filePaths.length; offset += UPLOAD_BATCH_SIZE) {
     const batch = filePaths.slice(offset, offset + UPLOAD_BATCH_SIZE);
     const response = await previewUpload({ ...rest, directories: [], filePaths: batch }, csrf, options);
 
-    overwriteableCount += response.overwriteableCount;
-    blockingCount += response.blockingCount;
-    appendUnique(overwriteable, response.overwriteable);
-    appendUnique(blocking, response.blocking);
+    appendUnique(allOverwriteable, overwriteable, response.overwriteable);
+    appendUnique(allBlocking, blocking, response.blocking);
   }
 
-  return { overwriteableCount, blockingCount, overwriteable, blocking };
+  return {
+    overwriteableCount: allOverwriteable.size,
+    blockingCount: allBlocking.size,
+    overwriteable,
+    blocking,
+  };
 }
 
 export function beginUploadFiles(
@@ -477,30 +478,29 @@ export function beginUploadFilesBatched(
       }
     };
 
-    for (let offset = 0; offset < directories.length; offset += UPLOAD_BATCH_SIZE) {
+    for (const directory of directories) {
       if (cancelled) {
         break;
       }
 
-      const batch = directories.slice(offset, offset + UPLOAD_BATCH_SIZE);
-      const handle = beginUploadFiles({ ...rest, files: [], directories: batch }, csrf);
+      const handle = beginUploadFiles({ ...rest, files: [], directories: [directory] }, csrf);
 
       activeHandle = handle;
       try {
         await handle.promise;
-        directoriesCreated += batch.length;
+        directoriesCreated += 1;
       } catch (error) {
         if (error instanceof UploadAbortedError) {
           cancelled = true;
         } else {
-          directoriesFailed += batch.length;
+          directoriesFailed += 1;
           errorMessage = error instanceof Error ? error.message : errorMessage;
         }
       } finally {
         activeHandle = null;
       }
 
-      completedWork += batch.length;
+      completedWork += 1;
       reportProgress(completedWork);
     }
 

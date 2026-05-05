@@ -17,6 +17,7 @@ function makePreview(overrides: Partial<ParsedZipPreview> = {}): ParsedZipPrevie
     ],
     totalDirectories: 2,
     totalFiles: 1,
+    totalUncompressedBytes: 3,
     zipNameWithoutExtension: "archive",
     ...overrides,
   };

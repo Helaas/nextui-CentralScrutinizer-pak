@@ -271,17 +271,17 @@ export default function Page() {
   }
 
   function beginZipPreviewAbort() {
+    const controller = new AbortController();
     const activeRequest = {
-      controller: new AbortController(),
-      timeoutId: 0 as ReturnType<typeof setTimeout>,
+      controller,
+      timeoutId: setTimeout(() => {
+        activeRequest.timedOut = true;
+        controller.abort();
+      }, ZIP_PREVIEW_TIMEOUT_MS),
       timedOut: false,
     };
 
     clearZipPreviewAbort();
-    activeRequest.timeoutId = setTimeout(() => {
-      activeRequest.timedOut = true;
-      activeRequest.controller.abort();
-    }, ZIP_PREVIEW_TIMEOUT_MS);
     zipPreviewAbortRef.current = activeRequest;
     return activeRequest;
   }

@@ -18,8 +18,8 @@
 #define CS_UPLOAD_MAX_DIRECTORIES 32
 #define CS_UPLOAD_MAX_REQUEST_BYTES_DEFAULT (8LL * 1024 * 1024 * 1024)
 #define CS_UPLOAD_MAX_BIOS_FILE_BYTES_DEFAULT (64LL * 1024 * 1024)
-#define CS_UPLOAD_PREVIEW_LIMIT 5
 #define CS_UPLOAD_PREVIEW_TRACK_MAX 256
+#define CS_UPLOAD_PREVIEW_RESULT_MAX CS_UPLOAD_PREVIEW_TRACK_MAX
 
 typedef struct cs_upload_request {
     cs_app *app;
@@ -56,8 +56,8 @@ typedef struct cs_upload_preview_conflict {
 } cs_upload_preview_conflict;
 
 typedef struct cs_upload_preview_result {
-    cs_upload_preview_conflict overwriteable[CS_UPLOAD_PREVIEW_LIMIT];
-    cs_upload_preview_conflict blocking[CS_UPLOAD_PREVIEW_LIMIT];
+    cs_upload_preview_conflict overwriteable[CS_UPLOAD_PREVIEW_RESULT_MAX];
+    cs_upload_preview_conflict blocking[CS_UPLOAD_PREVIEW_RESULT_MAX];
     char seen_paths[CS_UPLOAD_PREVIEW_TRACK_MAX][CS_PATH_MAX];
     cs_upload_preview_kind seen_kinds[CS_UPLOAD_PREVIEW_TRACK_MAX];
     size_t overwriteable_count;
@@ -530,7 +530,7 @@ static void cs_upload_preview_record(cs_upload_preview_result *result,
     total_count = blocking ? &result->blocking_count : &result->overwriteable_count;
 
     *total_count += 1;
-    if (*preview_count >= CS_UPLOAD_PREVIEW_LIMIT) {
+    if (*preview_count >= CS_UPLOAD_PREVIEW_RESULT_MAX) {
         return;
     }
 

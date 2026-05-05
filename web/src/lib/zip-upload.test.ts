@@ -1,7 +1,7 @@
 import JSZip from "jszip";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { parseZipFile, uploadPathsFromZip, uploadSelectionFromZip } from "./zip-upload";
+import { ZIP_MAX_UNCOMPRESSED_BYTES, parseZipFile, uploadPathsFromZip, uploadSelectionFromZip } from "./zip-upload";
 
 async function makeZipFile(name: string, build: (zip: JSZip) => void): Promise<File> {
   const zip = new JSZip();
@@ -18,6 +18,10 @@ function relativePaths(files: File[]): string[] {
 }
 
 describe("parseZipFile", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("returns parsed entries, common root, and counts", async () => {
     const file = await makeZipFile("favorites.zip", (zip) => {
       zip.folder("Favorites")?.folder("Empty");
@@ -31,6 +35,7 @@ describe("parseZipFile", () => {
     expect(preview.totalDirectories).toBe(3);
     expect(preview.archiveFileName).toBe("favorites.zip");
     expect(preview.zipNameWithoutExtension).toBe("favorites");
+    expect(preview.totalUncompressedBytes).toBe(3);
     expect(preview.entries).toHaveLength(4);
   });
 
@@ -45,6 +50,7 @@ describe("parseZipFile", () => {
     expect(preview.commonRoot).toBeNull();
     expect(preview.totalFiles).toBe(1);
     expect(preview.totalDirectories).toBe(1);
+    expect(preview.totalUncompressedBytes).toBe(5);
     expect(preview.zipNameWithoutExtension).toBe("Loose Files");
   });
 
@@ -61,6 +67,7 @@ describe("parseZipFile", () => {
 
     expect(preview.entries.map((e) => e.path)).toEqual(["Root", "Root/Empty", "Root/game.gba"]);
     expect(preview.commonRoot).toBe("Root");
+    expect(preview.totalUncompressedBytes).toBe(3);
   });
 
   it("returns empty for zip with no uploadable content", async () => {
@@ -72,6 +79,7 @@ describe("parseZipFile", () => {
 
     expect(preview.entries).toHaveLength(0);
     expect(preview.commonRoot).toBeNull();
+    expect(preview.totalUncompressedBytes).toBe(0);
   });
 
   it("strips .pakz when building the wrapper folder name", async () => {
@@ -83,6 +91,33 @@ describe("parseZipFile", () => {
 
     expect(preview.archiveFileName).toBe("Central.Scrutinizer.pakz");
     expect(preview.zipNameWithoutExtension).toBe("Central.Scrutinizer");
+  });
+
+  it("rejects archives whose uploadable entries exceed the uncompressed size limit", async () => {
+    const asyncMock = vi.fn();
+    const hugeEntry = {
+      _data: { uncompressedSize: ZIP_MAX_UNCOMPRESSED_BYTES + 1 },
+      async: asyncMock,
+      comment: "",
+      date: new Date(),
+      dir: false,
+      dosPermissions: null,
+      name: "huge.bin",
+      options: {},
+      unixPermissions: null,
+    } as unknown as JSZip.JSZipObject;
+    const zip = {
+      forEach: (callback: (relativePath: string, zipObject: JSZip.JSZipObject) => void) => {
+        callback("huge.bin", hugeEntry);
+      },
+    } as unknown as JSZip;
+
+    vi.spyOn(JSZip, "loadAsync").mockResolvedValue(zip);
+
+    await expect(parseZipFile(new File(["zip"], "huge.zip", { type: "application/zip" }))).rejects.toThrow(
+      "ZIP expands to too much data",
+    );
+    expect(asyncMock).not.toHaveBeenCalled();
   });
 });
 

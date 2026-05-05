@@ -13,11 +13,49 @@ export type ParsedZipPreview = {
   commonRoot: string | null;
   totalFiles: number;
   totalDirectories: number;
+  totalUncompressedBytes: number;
   archiveFileName: string;
   zipNameWithoutExtension: string;
 };
 
 export const ZIP_MAX_ENTRIES = 50000;
+export const ZIP_MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024;
+
+type SizedZipObject = JSZip.JSZipObject & {
+  _data?: {
+    uncompressedSize?: number;
+  };
+};
+
+function formatBytes(bytes: number): string {
+  const gib = 1024 * 1024 * 1024;
+  const mib = 1024 * 1024;
+
+  if (bytes >= gib) {
+    const value = bytes / gib;
+    return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)} GiB`;
+  }
+  if (bytes >= mib) {
+    const value = bytes / mib;
+    return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)} MiB`;
+  }
+
+  return `${bytes.toLocaleString()} bytes`;
+}
+
+function zipObjectUncompressedSize(zipObject: JSZip.JSZipObject): number {
+  if (zipObject.dir) {
+    return 0;
+  }
+
+  const size = (zipObject as SizedZipObject)._data?.uncompressedSize;
+
+  if (typeof size !== "number" || !Number.isFinite(size) || size < 0) {
+    throw new Error(`ZIP entry size could not be read for ${zipObject.name}.`);
+  }
+
+  return size;
+}
 
 function normalizeArchivePath(path: string, isDirectory: boolean): string {
   let normalized = path.replace(/\\/g, "/");
@@ -124,6 +162,7 @@ export async function parseZipFile(file: File): Promise<ParsedZipPreview> {
   const zip = await JSZip.loadAsync(file);
   const entries: ParsedZipEntry[] = [];
   let totalSeen = 0;
+  let totalUncompressedBytes = 0;
 
   zip.forEach((relativePath, zipObject) => {
     totalSeen += 1;
@@ -133,6 +172,7 @@ export async function parseZipFile(file: File): Promise<ParsedZipPreview> {
       return;
     }
 
+    totalUncompressedBytes += zipObjectUncompressedSize(zipObject);
     entries.push({
       kind: zipObject.dir ? "directory" : "file",
       path: normalized,
@@ -145,6 +185,11 @@ export async function parseZipFile(file: File): Promise<ParsedZipPreview> {
       `ZIP contains too many entries (${totalSeen.toLocaleString()}). Limit is ${ZIP_MAX_ENTRIES.toLocaleString()}.`,
     );
   }
+  if (totalUncompressedBytes > ZIP_MAX_UNCOMPRESSED_BYTES) {
+    throw new Error(
+      `ZIP expands to too much data (${formatBytes(totalUncompressedBytes)}). Limit is ${formatBytes(ZIP_MAX_UNCOMPRESSED_BYTES)}.`,
+    );
+  }
 
   const commonRoot = findCommonRoot(entries);
   const totalFiles = entries.filter((e) => e.kind === "file").length;
@@ -155,6 +200,7 @@ export async function parseZipFile(file: File): Promise<ParsedZipPreview> {
     commonRoot,
     totalFiles,
     totalDirectories,
+    totalUncompressedBytes,
     archiveFileName: file.name,
     zipNameWithoutExtension: archiveRootFromFileName(file.name),
   };
