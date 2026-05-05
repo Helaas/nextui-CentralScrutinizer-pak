@@ -359,6 +359,25 @@ describe("uploadFiles", () => {
     expect(((request.body?.get("file") as File) ?? file).name).toBe("Favorites/GBA/Pokemon Emerald.gba");
   });
 
+  it("posts explicit directory fields for empty folder uploads", async () => {
+    vi.stubGlobal("XMLHttpRequest", MockXhr as unknown as typeof XMLHttpRequest);
+
+    await uploadFiles(
+      {
+        directories: ["Favorites", "Favorites/Empty"],
+        files: [],
+        path: "Imports",
+        scope: "files",
+      },
+      "csrf-token",
+    );
+
+    const request = MockXhr.instances[0];
+
+    expect(request.body?.getAll("directory")).toEqual(["Favorites", "Favorites/Empty"]);
+    expect(request.body?.getAll("file")).toEqual([]);
+  });
+
   it("can abort an upload in progress", async () => {
     MockXhr.autoLoad = false;
     vi.stubGlobal("XMLHttpRequest", MockXhr as unknown as typeof XMLHttpRequest);
@@ -459,7 +478,25 @@ describe("beginUploadFilesBatched", () => {
     handle.cancel();
 
     const summary = await handle.promise;
-    expect(summary).toEqual({ uploaded: 0, failed: 0, cancelled: true });
+    expect(summary).toEqual({ uploaded: 0, failed: 0, directoriesCreated: 0, directoriesFailed: 0, cancelled: true });
+  });
+
+  it("uploads directories before file batches", async () => {
+    const files = [new File(["x"], "file.bin", { type: "application/octet-stream" })];
+
+    vi.stubGlobal("XMLHttpRequest", MockXhr as unknown as typeof XMLHttpRequest);
+
+    const summary = await beginUploadFilesBatched(
+      { directories: ["Root", "Root/Empty"], files, scope: "files" },
+      "csrf-token",
+    ).promise;
+
+    expect(summary).toEqual({ uploaded: 1, failed: 0, directoriesCreated: 2, directoriesFailed: 0, cancelled: false });
+    expect(MockXhr.instances).toHaveLength(2);
+    expect(MockXhr.instances[0].body?.getAll("directory")).toEqual(["Root", "Root/Empty"]);
+    expect(MockXhr.instances[0].body?.getAll("file")).toEqual([]);
+    expect(MockXhr.instances[1].body?.getAll("directory")).toEqual([]);
+    expect(MockXhr.instances[1].body?.getAll("file")).toHaveLength(1);
   });
 
   it("reports partial success when a mid-batch upload fails", async () => {
@@ -489,7 +526,13 @@ describe("beginUploadFilesBatched", () => {
       "csrf-token",
     ).promise;
 
-    expect(summary).toEqual({ uploaded: UPLOAD_BATCH_SIZE, failed: 5, cancelled: false });
+    expect(summary).toEqual({
+      uploaded: UPLOAD_BATCH_SIZE,
+      failed: 5,
+      directoriesCreated: 0,
+      directoriesFailed: 0,
+      cancelled: false,
+    });
   });
 });
 

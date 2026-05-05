@@ -11,6 +11,7 @@ export function BrowserWorkspaceCard({
   onRefresh,
   onSearchChange,
   onUploadFolder,
+  onUploadZip,
   onUploadFile,
   rootLabel,
   scope,
@@ -27,6 +28,7 @@ export function BrowserWorkspaceCard({
   onRefresh: () => void;
   onSearchChange: (value: string) => void;
   onUploadFolder?: () => void;
+  onUploadZip?: () => void;
   onUploadFile: () => void;
   rootLabel: string;
   scope: BrowserScope;
@@ -105,6 +107,16 @@ export function BrowserWorkspaceCard({
                 type="button"
               >
                 Upload Folder
+              </button>
+            ) : null}
+            {showFolderOps && onUploadZip ? (
+              <button
+                className="rounded-md border border-[var(--border)] bg-[var(--panel-alt)] px-4 py-2 text-sm font-medium text-[var(--text)] transition hover:border-[var(--accent)]/50 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={busy}
+                onClick={onUploadZip}
+                type="button"
+              >
+                Upload ZIP
               </button>
             ) : null}
             {showFolderOps ? (

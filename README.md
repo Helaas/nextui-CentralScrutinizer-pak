@@ -8,7 +8,7 @@ It runs an HTTP server while the pak is open, and it can hand that server off to
 
 - Shows your library grouped by platform family with dedicated console icons, emulator availability warnings, and installed/all emulator filters
 - Lets you browse ROMs, saves, save-state bundles, BIOS, overlays, and cheats by system
-- Supports upload, download, rename, delete, and folder creation where the current workspace allows it
+- Supports upload, download, rename, delete, and folder creation where the current workspace allows it, including ZIP uploads for exact folder preservation
 - Lets you replace ROM artwork from the browser with PNG files
 - Includes a full SD card file browser workspace
 - Includes collection management for `Collections/*.txt` playlists, collection icons, and shared collection background art
@@ -71,7 +71,7 @@ From the library and per-system workspaces you can:
 
 - Browse ROM folders
 - Upload files into managed ROM, save, BIOS, overlay, and cheat folders
-- Upload folders and create new folders inside ROM workspaces
+- Upload folders, upload ZIP archives, and create new folders inside ROM workspaces
 - Download files directly
 - Rename and delete managed items
 - Replace ROM artwork with PNG images
@@ -84,12 +84,22 @@ From the library and per-system workspaces you can:
 
 The Tools workspace includes:
 
-- **File Browser**: browse the SD card, upload files or folders, create folders, rename items, delete items, run recursive name searches, preview common image files, and edit plaintext files
+- **File Browser**: browse the SD card, upload files, folders, or ZIP archives, create folders, rename items, delete items, run recursive name searches, preview common image files, and edit plaintext files
 - **Collections**: create and edit `Collections/*.txt` playlists, reorder ROM paths, manage collection icons, and set or remove the shared collections background
 - **Screenshots**: preview images from `Screenshots/`, download or delete them individually, or download all screenshots as a zip
 - **Mac Dot Cleanup**: scan for `.DS_Store`, `._*`, `__MACOSX`, and top-level macOS transfer folders, then delete them in one pass
 - **Log Viewer**: browse logs under `.userdata`, live-tail a log file, and download one or all logs
 - **Terminal**: open a real shell in the browser if terminal access has been enabled on the handheld
+
+### Uploading Folders And ZIPs
+
+Folder uploads are available in ROM workspaces and the File Browser.
+
+- **Upload File** uploads the selected files exactly as files. If you select a `.zip` there, Central Scrutinizer uploads the `.zip` file itself and does not extract it.
+- **Upload Folder** uses your browser's native folder picker. It preserves files and normal folder structure, but some browser folder pickers do not report completely empty folders.
+- Dragging and dropping a folder into a supported workspace preserves the dropped folder tree, including empty folders, when the browser exposes dropped directory entries.
+- **Upload ZIP** is the reliable Chrome, Safari, and Firefox option for preserving empty folders from the upload buttons. Central Scrutinizer extracts the ZIP in your browser before upload, keeps a single archive root folder when the ZIP has one, wraps loose archive contents in a folder named after the ZIP, and skips common macOS archive artifacts such as `__MACOSX/`, `.DS_Store`, and `._*` files.
+- Existing folders are merged. Existing files are not overwritten. If an upload is cancelled or a later file batch fails, any folders and earlier files that already uploaded remain in place, and the browser refreshes with the upload result.
 
 ## Handheld Settings
 

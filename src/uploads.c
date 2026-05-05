@@ -268,7 +268,11 @@ static int cs_upload_prepare_directory_within_root(const char *root, const char 
 
             next_fd = openat(current_fd, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
             if (next_fd < 0) {
-                if (errno != ENOENT || mkdirat(current_fd, component, 0775) != 0) {
+                if (errno != ENOENT) {
+                    close(current_fd);
+                    return -1;
+                }
+                if (mkdirat(current_fd, component, 0775) != 0 && errno != EEXIST) {
                     close(current_fd);
                     return -1;
                 }
@@ -466,6 +470,35 @@ int cs_upload_prepare_temp_root(const cs_paths *paths) {
     }
 
     return cs_upload_prepare_directory_within_root(paths->sdcard_root, paths->temp_upload_root);
+}
+
+int cs_upload_prepare_final_directory(const char *final_root,
+                                      const char *final_guard_root,
+                                      const char *relative_dir,
+                                      unsigned int path_flags) {
+    char resolved_dir[CS_PATH_MAX];
+    struct stat st;
+    const char *final_dir = relative_dir ? relative_dir : "";
+
+    if (!final_root || !final_guard_root) {
+        return -1;
+    }
+    if (cs_validate_relative_path_with_flags(final_dir, path_flags | CS_PATH_FLAG_ALLOW_EMPTY) != 0) {
+        return -1;
+    }
+    if (lstat(final_root, &st) == 0 && S_ISLNK(st.st_mode)) {
+        return -1;
+    }
+    if (cs_resolve_path_under_root_with_flags(final_root,
+                                              final_dir,
+                                              path_flags | CS_PATH_FLAG_ALLOW_EMPTY,
+                                              resolved_dir,
+                                              sizeof(resolved_dir))
+        != 0) {
+        return -1;
+    }
+
+    return cs_upload_prepare_directory_within_root(final_guard_root, resolved_dir);
 }
 
 int cs_upload_promote(const cs_upload_plan *plan) {

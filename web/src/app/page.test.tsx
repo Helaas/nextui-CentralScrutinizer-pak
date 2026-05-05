@@ -39,8 +39,12 @@ const mockApi = vi.hoisted(() => ({
   revokeBrowser: vi.fn(),
   writeTextFile: vi.fn(),
 }));
+const mockZipUpload = vi.hoisted(() => ({
+  uploadSelectionFromZip: vi.fn(),
+}));
 
 vi.mock("../lib/api", () => mockApi);
+vi.mock("../lib/zip-upload", () => mockZipUpload);
 vi.mock("../components/logs-tool-view", () => ({
   LogsToolView: ({ onBack }: { onBack: () => void }) => (
     <div>
@@ -1103,7 +1107,7 @@ describe("Page", () => {
     mockApi.getBrowser.mockResolvedValue(fileBrowserResponse());
     mockApi.beginUploadFilesBatched.mockReturnValue({
       cancel: vi.fn(),
-      promise: Promise.resolve({ uploaded: 1, failed: 0, cancelled: false }),
+      promise: Promise.resolve({ uploaded: 1, failed: 0, directoriesCreated: 0, directoriesFailed: 0, cancelled: false }),
     });
 
     render(<Page />);
@@ -1125,10 +1129,84 @@ describe("Page", () => {
     expect(folderFile.webkitRelativePath).toBe("Favorites/GBA/Pokemon Emerald.gba");
   });
 
+  it("uploads ZIP fallback selections from the file browser tool", async () => {
+    const zipFile = new File(["zip"], "Archive.zip", { type: "application/zip" });
+    const extractedFile = new File(["rom"], "Pokemon Emerald.gba", { type: "application/octet-stream" }) as File & {
+      webkitRelativePath?: string;
+    };
+    const originalCreateElement = document.createElement.bind(document);
+
+    Object.defineProperty(extractedFile, "webkitRelativePath", {
+      configurable: true,
+      value: "Archive/GBA/Pokemon Emerald.gba",
+    });
+    mockZipUpload.uploadSelectionFromZip.mockResolvedValue({
+      directories: ["Archive", "Archive/Empty", "Archive/GBA"],
+      files: [extractedFile],
+    });
+
+    vi.spyOn(document, "createElement").mockImplementation(((tagName: string, options?: ElementCreationOptions) => {
+      const element = originalCreateElement(tagName, options);
+
+      if (tagName.toLowerCase() !== "input") {
+        return element;
+      }
+
+      const input = element as HTMLInputElement & { webkitdirectory?: boolean };
+
+      Object.defineProperty(input, "webkitdirectory", {
+        configurable: true,
+        enumerable: true,
+        value: false,
+        writable: true,
+      });
+
+      input.click = () => {
+        if (input.accept.includes(".zip")) {
+          Object.defineProperty(input, "files", {
+            configurable: true,
+            value: createFileList([zipFile]),
+          });
+          fireEvent.change(input);
+        }
+      };
+
+      return input;
+    }) as typeof document.createElement);
+
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getPlatforms.mockResolvedValue(platformGroups());
+    mockApi.getBrowser.mockResolvedValue(fileBrowserResponse());
+    mockApi.beginUploadFilesBatched.mockReturnValue({
+      cancel: vi.fn(),
+      promise: Promise.resolve({ uploaded: 1, failed: 0, directoriesCreated: 3, directoriesFailed: 0, cancelled: false }),
+    });
+
+    render(<Page />);
+
+    await openFileBrowserTool();
+    fireEvent.click(await screen.findByRole("button", { name: "Upload ZIP" }));
+
+    await screen.findByText("Uploaded 1 file and 3 folders.");
+    expect(mockZipUpload.uploadSelectionFromZip).toHaveBeenCalledWith(zipFile);
+    expect(mockApi.beginUploadFilesBatched).toHaveBeenCalledWith(
+      expect.objectContaining({
+        directories: ["Archive", "Archive/Empty", "Archive/GBA"],
+        files: [extractedFile],
+        path: undefined,
+        scope: "files",
+      }),
+      "csrf-token",
+      expect.any(Function),
+    );
+  });
+
   it("shows a cancel action for uploads and reports when the upload is cancelled", async () => {
-    let resolveUpload: ((summary: { uploaded: number; failed: number; cancelled: boolean }) => void) | undefined;
+    let resolveUpload:
+      | ((summary: { uploaded: number; failed: number; directoriesCreated: number; directoriesFailed: number; cancelled: boolean }) => void)
+      | undefined;
     const cancel = vi.fn(() => {
-      resolveUpload?.({ uploaded: 0, failed: 0, cancelled: true });
+      resolveUpload?.({ uploaded: 0, failed: 0, directoriesCreated: 0, directoriesFailed: 0, cancelled: true });
     });
 
     mockApi.getSession.mockResolvedValue(pairedSession());
@@ -1136,7 +1214,13 @@ describe("Page", () => {
     mockApi.getBrowser.mockResolvedValue(fileBrowserResponse());
     mockApi.beginUploadFilesBatched.mockImplementation(() => ({
       cancel,
-      promise: new Promise<{ uploaded: number; failed: number; cancelled: boolean }>((resolve) => {
+      promise: new Promise<{
+        uploaded: number;
+        failed: number;
+        directoriesCreated: number;
+        directoriesFailed: number;
+        cancelled: boolean;
+      }>((resolve) => {
         resolveUpload = resolve;
       }),
     }));

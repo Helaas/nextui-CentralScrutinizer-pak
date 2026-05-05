@@ -33,6 +33,7 @@ import {
   writeTextFile,
 } from "../lib/api";
 import { getBrowserId } from "../lib/browser-id";
+import { uploadSelectionFromZip } from "../lib/zip-upload";
 import { useBrowserPagination } from "../lib/use-browser-pagination";
 import {
   createPlatformDisplayNames,
@@ -61,6 +62,7 @@ import type {
   PlatformResource,
   SessionResponse,
   TransferState,
+  UploadSelection,
 } from "../lib/types";
 
 type DirectoryCapableInput = HTMLInputElement & { webkitdirectory?: boolean };
@@ -120,7 +122,7 @@ function browserSupportsDirectoryUpload(): boolean {
   return "webkitdirectory" in (document.createElement("input") as DirectoryCapableInput);
 }
 
-async function pickFolderFiles(): Promise<File[]> {
+async function pickFolderFiles(): Promise<UploadSelection> {
   return new Promise((resolve) => {
     const input = document.createElement("input") as DirectoryCapableInput;
 
@@ -128,10 +130,24 @@ async function pickFolderFiles(): Promise<File[]> {
     input.multiple = true;
     input.webkitdirectory = true;
     input.addEventListener("change", () => {
-      resolve(Array.from(input.files ?? []));
+      resolve({ directories: [], files: Array.from(input.files ?? []) });
     });
     input.click();
   });
+}
+
+function hasUploadItems(selection: UploadSelection): boolean {
+  return selection.files.length > 0 || selection.directories.length > 0;
+}
+
+function formatUploadCount(count: number, singular: string): string | null {
+  return count > 0 ? `${count} ${singular}${count === 1 ? "" : "s"}` : null;
+}
+
+function formatUploadParts(files: number, directories: number): string {
+  return [formatUploadCount(files, "file"), formatUploadCount(directories, "folder")]
+    .filter((part): part is string => Boolean(part))
+    .join(" and ");
 }
 
 function formatItemCount(count: number): string {
@@ -666,17 +682,19 @@ export default function Page() {
     }
   }
 
-  const handleUploadFiles = async (files: File[]) => {
+  const handleUploadSelection = async (selection: UploadSelection) => {
     const scopeState = currentScopeState();
     const csrf = session.csrf;
 
-    if (!scopeState || !csrf || files.length === 0) {
+    if (!scopeState || !csrf || !hasUploadItems(selection)) {
       return;
     }
 
     await withBusy(async () => {
-      const label = `Uploading ${files.length} file${files.length === 1 ? "" : "s"}`;
-      const upload = beginUploadFilesBatched({ ...scopeState, files }, csrf, (progress) => {
+      const totalFiles = selection.files.length;
+      const totalDirectories = selection.directories.length;
+      const label = `Uploading ${formatUploadParts(totalFiles, totalDirectories)}`;
+      const upload = beginUploadFilesBatched({ ...scopeState, ...selection }, csrf, (progress) => {
         setTransfer((current) => ({ ...current, progress }));
       });
 
@@ -696,17 +714,19 @@ export default function Page() {
         await refreshCurrentData();
 
         const plural = (n: number) => (n === 1 ? "" : "s");
+        const uploadedParts = formatUploadParts(summary.uploaded, summary.directoriesCreated);
+        const failedParts = formatUploadParts(summary.failed, summary.directoriesFailed);
 
-        if (summary.cancelled && summary.uploaded === 0) {
+        if (summary.cancelled && summary.uploaded === 0 && summary.directoriesCreated === 0) {
           setNotice("Upload cancelled.");
         } else if (summary.cancelled) {
-          setNotice(`Upload cancelled after ${summary.uploaded} of ${files.length} file${plural(files.length)}.`);
-        } else if (summary.failed > 0 && summary.uploaded === 0) {
+          setNotice(`Upload cancelled after ${uploadedParts || "0 files"}.`);
+        } else if ((summary.failed > 0 || summary.directoriesFailed > 0) && summary.uploaded === 0 && summary.directoriesCreated === 0) {
           setNotice("Upload failed.");
-        } else if (summary.failed > 0) {
-          setNotice(`Uploaded ${summary.uploaded} file${plural(summary.uploaded)}, ${summary.failed} failed.`);
+        } else if (summary.failed > 0 || summary.directoriesFailed > 0) {
+          setNotice(`Uploaded ${uploadedParts || "0 files"}, ${failedParts || "0 files"} failed.`);
         } else {
-          setNotice(`Uploaded ${summary.uploaded} file${plural(summary.uploaded)}.`);
+          setNotice(`Uploaded ${uploadedParts || `${summary.uploaded} file${plural(summary.uploaded)}`}.`);
         }
       } finally {
         clearTransfer();
@@ -721,10 +741,37 @@ export default function Page() {
       return;
     }
 
-    const files = await pickFolderFiles();
+    const selection = await pickFolderFiles();
 
-    if (files.length > 0) {
-      await handleUploadFiles(files);
+    if (hasUploadItems(selection)) {
+      await handleUploadSelection(selection);
+    }
+  };
+
+  const handleUploadZip = async () => {
+    const scopeState = currentScopeState();
+
+    if (!scopeState || (scopeState.scope !== "roms" && scopeState.scope !== "files")) {
+      return;
+    }
+
+    const file = await pickSingleFile(".zip,application/zip,application/x-zip-compressed");
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const selection = await uploadSelectionFromZip(file);
+
+      if (!hasUploadItems(selection)) {
+        setNotice("ZIP contains no uploadable files or folders.");
+        return;
+      }
+
+      await handleUploadSelection(selection);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "ZIP upload failed.");
     }
   };
 
@@ -1270,8 +1317,11 @@ export default function Page() {
         onUploadFolder={() => {
           void handleUploadFolder();
         }}
-        onUploadFiles={(files) => {
-          void handleUploadFiles(files);
+        onUploadZip={() => {
+          void handleUploadZip();
+        }}
+        onUploadFiles={(selection) => {
+          void handleUploadSelection(selection);
         }}
         csrf={session.csrf}
         response={browserResponse!}

@@ -9,6 +9,7 @@ import type {
   BrowserScope,
   FileSearchResult,
   TransferState,
+  UploadSelection,
 } from "../lib/types";
 import { Breadcrumbs } from "./breadcrumbs";
 import { BrowserFilesToolbar } from "./browser-files-toolbar";
@@ -297,6 +298,7 @@ export function BrowserView({
   onReplaceArt,
   onSearchChange,
   onUploadFolder,
+  onUploadZip,
   onUploadFiles,
   searchResults,
   transfer,
@@ -326,7 +328,8 @@ export function BrowserView({
   onReplaceArt: (entry: BrowserEntry) => void;
   onSearchChange: (value: string) => void;
   onUploadFolder?: () => void;
-  onUploadFiles: (files: File[]) => void;
+  onUploadZip?: () => void;
+  onUploadFiles: (selection: UploadSelection) => void;
   searchResults?: FileSearchResult[] | null;
   transfer: TransferState;
 }) {
@@ -337,7 +340,8 @@ export function BrowserView({
   const [localNotice, setLocalNotice] = useState<string | null>(null);
   const [moveSelectionEntries, setMoveSelectionEntries] = useState<BrowserEntry[] | null>(null);
   const isFiles = scope === "files";
-  const allowDroppedDirectories = canUploadFolder && (isFiles || scope === "roms");
+  const scopeAllowsFolderUploads = isFiles || scope === "roms";
+  const allowDroppedDirectories = scopeAllowsFolderUploads;
   const fullPath = getFullPath(scope, response);
   const responseTotalCount = Number.isFinite(response.totalCount) ? response.totalCount : 0;
   const totalCount = Math.max(responseTotalCount, response.entries.length);
@@ -457,6 +461,7 @@ export function BrowserView({
             onRunSearch={onRunSearch}
             onSearchChange={onSearchChange}
             onUploadFolder={onUploadFolder}
+            onUploadZip={onUploadZip}
             onUploadFile={() => {
               uploadInputRef.current?.click();
             }}
@@ -477,6 +482,7 @@ export function BrowserView({
           onRefresh={onRefresh}
           onSearchChange={onSearchChange}
           onUploadFolder={onUploadFolder}
+          onUploadZip={onUploadZip}
           onUploadFile={() => {
             uploadInputRef.current?.click();
           }}
@@ -682,7 +688,7 @@ export function BrowserView({
         onChange={(event) => {
           const files = Array.from(event.target.files ?? []);
           if (files.length > 0) {
-            onUploadFiles(files);
+            onUploadFiles({ directories: [], files });
           }
           event.target.value = "";
         }}

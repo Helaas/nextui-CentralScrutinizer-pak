@@ -110,6 +110,12 @@ export type UploadRequest = {
   tag?: string;
   path?: string;
   files: File[];
+  directories?: string[];
+};
+
+export type UploadSelection = {
+  files: File[];
+  directories: string[];
 };
 
 export type ReplaceArtRequest = {

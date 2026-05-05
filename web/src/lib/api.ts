@@ -43,6 +43,8 @@ export type UploadHandle = {
 export type UploadSummary = {
   uploaded: number;
   failed: number;
+  directoriesCreated: number;
+  directoriesFailed: number;
   cancelled: boolean;
 };
 
@@ -282,6 +284,9 @@ export function beginUploadFiles(
     if (request.path) {
       form.set("path", request.path);
     }
+    for (const directory of request.directories ?? []) {
+      form.append("directory", directory);
+    }
     for (const file of request.files) {
       const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
 
@@ -327,7 +332,7 @@ export async function uploadFiles(
   if (summary.cancelled) {
     throw new UploadAbortedError();
   }
-  if (summary.failed > 0) {
+  if (summary.failed > 0 || summary.directoriesFailed > 0) {
     throw new Error("Upload failed");
   }
 }
@@ -346,11 +351,46 @@ export function beginUploadFilesBatched(
   let activeHandle: UploadHandle | null = null;
 
   const promise = (async (): Promise<UploadSummary> => {
-    const { files, ...rest } = request;
+    const { files, directories = [], ...rest } = request;
     const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
-    let uploadedBytes = 0;
+    const totalWork = totalBytes > 0 ? totalBytes + directories.length : files.length + directories.length;
+    let completedWork = 0;
     let uploaded = 0;
     let failed = 0;
+    let directoriesCreated = 0;
+    let directoriesFailed = 0;
+
+    const reportProgress = (workDone: number) => {
+      if (onProgress && totalWork > 0) {
+        onProgress(Math.round((workDone / totalWork) * 100));
+      }
+    };
+
+    for (let offset = 0; offset < directories.length; offset += UPLOAD_BATCH_SIZE) {
+      if (cancelled) {
+        break;
+      }
+
+      const batch = directories.slice(offset, offset + UPLOAD_BATCH_SIZE);
+      const handle = beginUploadFiles({ ...rest, files: [], directories: batch }, csrf);
+
+      activeHandle = handle;
+      try {
+        await handle.promise;
+        directoriesCreated += batch.length;
+      } catch (error) {
+        if (error instanceof UploadAbortedError) {
+          cancelled = true;
+        } else {
+          directoriesFailed += batch.length;
+        }
+      } finally {
+        activeHandle = null;
+      }
+
+      completedWork += batch.length;
+      reportProgress(completedWork);
+    }
 
     for (let offset = 0; offset < files.length; offset += UPLOAD_BATCH_SIZE) {
       if (cancelled) {
@@ -361,10 +401,10 @@ export function beginUploadFilesBatched(
       const batchBytes = batch.reduce((sum, f) => sum + f.size, 0);
 
       const handle = beginUploadFiles({ ...rest, files: batch }, csrf, (batchPct) => {
-        if (onProgress && totalBytes > 0) {
-          const batchLoaded = (batchPct / 100) * batchBytes;
-          onProgress(Math.round(((uploadedBytes + batchLoaded) / totalBytes) * 100));
-        }
+        const batchWork = totalBytes > 0 ? batchBytes : batch.length;
+        const batchLoaded = (batchPct / 100) * batchWork;
+
+        reportProgress(completedWork + batchLoaded);
       });
 
       activeHandle = handle;
@@ -381,13 +421,11 @@ export function beginUploadFilesBatched(
         activeHandle = null;
       }
 
-      uploadedBytes += batchBytes;
-      if (onProgress && totalBytes > 0) {
-        onProgress(Math.round((uploadedBytes / totalBytes) * 100));
-      }
+      completedWork += totalBytes > 0 ? batchBytes : batch.length;
+      reportProgress(completedWork);
     }
 
-    return { uploaded, failed, cancelled };
+    return { uploaded, failed, directoriesCreated, directoriesFailed, cancelled };
   })();
 
   return {

@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
 
+import type { UploadSelection } from "../lib/types";
+
 const EMPTY_IGNORED_DRAG_TYPES: readonly string[] = [];
 
 type FileSystemEntryLike = {
@@ -9,6 +11,17 @@ type FileSystemEntryLike = {
   file?: (cb: (file: File) => void, err?: (e: unknown) => void) => void;
   createReader?: () => { readEntries: (cb: (entries: FileSystemEntryLike[]) => void) => void };
 };
+
+function emptyUploadSelection(): UploadSelection {
+  return { directories: [], files: [] };
+}
+
+function mergeUploadSelections(selections: UploadSelection[]): UploadSelection {
+  return {
+    directories: selections.flatMap((selection) => selection.directories),
+    files: selections.flatMap((selection) => selection.files),
+  };
+}
 
 async function readFileEntry(entry: FileSystemEntryLike, path: string): Promise<File> {
   return new Promise<File>((resolve, reject) => {
@@ -37,28 +50,43 @@ async function readDirectoryEntries(reader: ReturnType<NonNullable<FileSystemEnt
   }
 }
 
-async function collectFilesFromEntry(entry: FileSystemEntryLike, path: string): Promise<File[]> {
+async function collectUploadSelectionFromEntry(entry: FileSystemEntryLike, path: string): Promise<UploadSelection> {
   if (entry.isFile && entry.file) {
     const file = await readFileEntry(entry, path);
-    return [file];
+    return { directories: [], files: [file] };
   }
 
   if (entry.isDirectory && entry.createReader) {
+    const directoryPath = `${path}${entry.name}`;
     const reader = entry.createReader();
     const children = await readDirectoryEntries(reader);
     const nested = await Promise.all(
-      children.map((child) => collectFilesFromEntry(child, `${path}${entry.name}/`)),
+      children.map((child) => collectUploadSelectionFromEntry(child, `${directoryPath}/`)),
     );
-    return nested.flat();
+    const selection = mergeUploadSelections(nested);
+
+    return {
+      directories: [directoryPath, ...selection.directories],
+      files: selection.files,
+    };
   }
 
-  return [];
+  return emptyUploadSelection();
 }
 
-export async function collectDroppedFiles(
+function getEntry(item: DataTransferItem): FileSystemEntryLike | null {
+  const entryItem = item as DataTransferItem & {
+    getAsEntry?: () => FileSystemEntryLike | null;
+    webkitGetAsEntry?: () => FileSystemEntryLike | null;
+  };
+
+  return entryItem.getAsEntry?.() ?? entryItem.webkitGetAsEntry?.() ?? null;
+}
+
+export async function collectDroppedUploadSelection(
   dataTransfer: DataTransfer,
   { allowDirectories = true }: { allowDirectories?: boolean } = {},
-): Promise<File[]> {
+): Promise<UploadSelection> {
   const entries: FileSystemEntryLike[] = [];
 
   for (let i = 0; i < dataTransfer.items.length; i++) {
@@ -68,7 +96,7 @@ export async function collectDroppedFiles(
       continue;
     }
 
-    const entry = (item as DataTransferItem & { webkitGetAsEntry?: () => FileSystemEntryLike | null }).webkitGetAsEntry?.();
+    const entry = getEntry(item);
 
     if (entry && (allowDirectories || !entry.isDirectory)) {
       entries.push(entry);
@@ -76,11 +104,20 @@ export async function collectDroppedFiles(
   }
 
   if (entries.length > 0) {
-    const nested = await Promise.all(entries.map((entry) => collectFilesFromEntry(entry, "")));
-    return nested.flat();
+    const nested = await Promise.all(entries.map((entry) => collectUploadSelectionFromEntry(entry, "")));
+    return mergeUploadSelections(nested);
   }
 
-  return Array.from(dataTransfer.files);
+  return { directories: [], files: Array.from(dataTransfer.files) };
+}
+
+export async function collectDroppedFiles(
+  dataTransfer: DataTransfer,
+  options?: { allowDirectories?: boolean },
+): Promise<File[]> {
+  const selection = await collectDroppedUploadSelection(dataTransfer, options);
+
+  return selection.files;
 }
 
 function hasIgnoredDragType(dataTransfer: DataTransfer, ignoredDragTypes: readonly string[]): boolean {
@@ -104,7 +141,7 @@ export function DropZone({
   children: ReactNode;
   disabled?: boolean;
   ignoredDragTypes?: readonly string[];
-  onDrop: (files: File[]) => void;
+  onDrop: (selection: UploadSelection) => void;
 }) {
   const [dragActive, setDragActive] = useState(false);
   const [reading, setReading] = useState(false);
@@ -168,9 +205,9 @@ export function DropZone({
 
       setReading(true);
       try {
-        const files = await collectDroppedFiles(event.dataTransfer, { allowDirectories });
-        if (files.length > 0) {
-          onDrop(files);
+        const selection = await collectDroppedUploadSelection(event.dataTransfer, { allowDirectories });
+        if (selection.files.length > 0 || selection.directories.length > 0) {
+          onDrop(selection);
         }
       } finally {
         setReading(false);
@@ -181,6 +218,7 @@ export function DropZone({
 
   return (
     <div
+      data-testid="upload-drop-zone"
       className="relative"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}

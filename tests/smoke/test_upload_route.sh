@@ -19,6 +19,8 @@ SAVE_UPLOAD_NAME="upload-$RANDOM-$$.sav"
 BIOS_UPLOAD_NAME="upload-$RANDOM-$$.bin"
 NOTE_UPLOAD_NAME="upload-$RANDOM-$$.txt"
 NOTE_UPLOAD_RELATIVE_PATH="Favorites/GBA/$NOTE_UPLOAD_NAME"
+EMPTY_DIR_NAME="empty-dir-$RANDOM-$$"
+MIXED_DIR_NAME="mixed-dir-$RANDOM-$$"
 NORMALIZED_PARENT_NOTE_UPLOAD_NAME="normalized-parent-$RANDOM-$$.txt"
 NORMALIZED_DOT_SEGMENT_NOTE_UPLOAD_NAME="normalized-dot-$RANDOM-$$.txt"
 NORMALIZED_DOUBLE_SEPARATOR_NOTE_UPLOAD_NAME="normalized-double-$RANDOM-$$.txt"
@@ -27,6 +29,10 @@ UPLOADED_ROM="$SDCARD_ROOT/Roms/Game Boy Advance (GBA)/$ROM_UPLOAD_NAME"
 UPLOADED_SAVE="$SDCARD_ROOT/Saves/GBA/$SAVE_UPLOAD_NAME"
 UPLOADED_BIOS="$SDCARD_ROOT/Bios/GBA/$BIOS_UPLOAD_NAME"
 UPLOADED_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/Favorites/GBA/$NOTE_UPLOAD_NAME"
+UPLOADED_EMPTY_DIR="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/$EMPTY_DIR_NAME"
+UPLOADED_EMPTY_NESTED_DIR="$UPLOADED_EMPTY_DIR/Nested"
+UPLOADED_MIXED_EMPTY_DIR="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/$MIXED_DIR_NAME/Empty"
+UPLOADED_MIXED_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/$MIXED_DIR_NAME/$NOTE_UPLOAD_NAME"
 NORMALIZED_PARENT_UPLOADED_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/$NORMALIZED_PARENT_NOTE_UPLOAD_NAME"
 NORMALIZED_DOT_SEGMENT_UPLOADED_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/$NORMALIZED_DOT_SEGMENT_NOTE_UPLOAD_NAME"
 NORMALIZED_DOUBLE_SEPARATOR_UPLOADED_NOTE="$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/Favorites/$NORMALIZED_DOUBLE_SEPARATOR_NOTE_UPLOAD_NAME"
@@ -88,6 +94,27 @@ assert_upload_stored() {
     echo "$upload_response" | tail -n 1 | grep -q '^200$'
     test -f "$expected_path"
     cmp -s "$SOURCE_NOTE" "$expected_path"
+}
+
+assert_directory_rejected() {
+    local scope="$1"
+    local path_value="$2"
+    local directory_name="$3"
+    local unexpected_path="$4"
+    local upload_response=""
+
+    upload_response="$(curl -sS -X POST \
+        -b "$COOKIE_JAR" \
+        -H "X-CS-CSRF: $CSRF_TOKEN" \
+        -F "scope=$scope" \
+        -F "path=$path_value" \
+        -F "directory=$directory_name" \
+        -w '\n%{http_code}' \
+        http://127.0.0.1:8877/api/upload)"
+
+    echo "$upload_response" | head -n 1 | grep -Fq '{"ok":false}'
+    echo "$upload_response" | tail -n 1 | grep -q '^400$'
+    test ! -e "$unexpected_path"
 }
 
 prepare_mock_sdcard "$SDCARD_ROOT"
@@ -201,6 +228,62 @@ echo "$UPLOAD_RESPONSE" | tail -n 1 | grep -q '^200$'
 test -f "$UPLOADED_NOTE"
 cmp -s "$SOURCE_NOTE" "$UPLOADED_NOTE"
 
+UPLOAD_RESPONSE="$(curl -sS -X POST \
+    -b "$COOKIE_JAR" \
+    -H "X-CS-CSRF: $CSRF_TOKEN" \
+    -F "scope=files" \
+    -F "path=.userdata/shared/CentralScrutinizer/imports" \
+    -F "directory=$EMPTY_DIR_NAME" \
+    -F "directory=$EMPTY_DIR_NAME/Nested" \
+    -w '\n%{http_code}' \
+    http://127.0.0.1:8877/api/upload)"
+
+echo "$UPLOAD_RESPONSE" | head -n 1 | grep -Fq '{"ok":true}'
+echo "$UPLOAD_RESPONSE" | tail -n 1 | grep -q '^200$'
+test -d "$UPLOADED_EMPTY_DIR"
+test -d "$UPLOADED_EMPTY_NESTED_DIR"
+
+UPLOAD_RESPONSE="$(curl -sS -X POST \
+    -b "$COOKIE_JAR" \
+    -H "X-CS-CSRF: $CSRF_TOKEN" \
+    -F "scope=files" \
+    -F "path=.userdata/shared/CentralScrutinizer/imports" \
+    -F "directory=$EMPTY_DIR_NAME" \
+    -w '\n%{http_code}' \
+    http://127.0.0.1:8877/api/upload)"
+
+echo "$UPLOAD_RESPONSE" | head -n 1 | grep -Fq '{"ok":true}'
+echo "$UPLOAD_RESPONSE" | tail -n 1 | grep -q '^200$'
+
+UPLOAD_RESPONSE="$(curl -sS -X POST \
+    -b "$COOKIE_JAR" \
+    -H "X-CS-CSRF: $CSRF_TOKEN" \
+    -F "scope=files" \
+    -F "path=.userdata/shared/CentralScrutinizer/imports" \
+    -F "directory=$MIXED_DIR_NAME/Empty" \
+    -F "file=@$SOURCE_NOTE;filename=$MIXED_DIR_NAME/$NOTE_UPLOAD_NAME" \
+    -w '\n%{http_code}' \
+    http://127.0.0.1:8877/api/upload)"
+
+echo "$UPLOAD_RESPONSE" | head -n 1 | grep -Fq '{"ok":true}'
+echo "$UPLOAD_RESPONSE" | tail -n 1 | grep -q '^200$'
+test -d "$UPLOADED_MIXED_EMPTY_DIR"
+test -f "$UPLOADED_MIXED_NOTE"
+cmp -s "$SOURCE_NOTE" "$UPLOADED_MIXED_NOTE"
+
+UPLOAD_RESPONSE="$(curl -sS -X POST \
+    -b "$COOKIE_JAR" \
+    -H "X-CS-CSRF: $CSRF_TOKEN" \
+    -F "scope=files" \
+    -F "path=.userdata/shared/CentralScrutinizer/imports" \
+    -F "file=@$SOURCE_NOTE_B;filename=$NOTE_UPLOAD_RELATIVE_PATH" \
+    -w '\n%{http_code}' \
+    http://127.0.0.1:8877/api/upload)"
+
+echo "$UPLOAD_RESPONSE" | head -n 1 | grep -Fq '{"ok":false}'
+echo "$UPLOAD_RESPONSE" | tail -n 1 | grep -q '^500$'
+cmp -s "$SOURCE_NOTE" "$UPLOADED_NOTE"
+
 # CivetWeb normalizes some malformed multipart filenames before our callback
 # sees them, so these uploads must stay rooted inside the requested import
 # directory when the client name is cleaned up by the parser.
@@ -215,6 +298,10 @@ assert_upload_rejected "files" ".userdata/shared/CentralScrutinizer/imports" "$M
     "$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/imports/$MALFORMED_DIRECTORY_NAME"
 assert_upload_rejected "roms" "" ".hidden/$NOTE_UPLOAD_NAME" \
     "$SDCARD_ROOT/Roms/Game Boy Advance (GBA)/.hidden/$NOTE_UPLOAD_NAME"
+assert_directory_rejected "files" ".userdata/shared/CentralScrutinizer/imports" "../dir-escape" \
+    "$SDCARD_ROOT/.userdata/shared/CentralScrutinizer/dir-escape"
+assert_directory_rejected "roms" "" ".hidden" \
+    "$SDCARD_ROOT/Roms/Game Boy Advance (GBA)/.hidden"
 
 UPLOAD_RESPONSE="$(curl -sS -X POST \
     -b "$COOKIE_JAR" \

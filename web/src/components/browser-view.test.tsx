@@ -698,7 +698,7 @@ describe("BrowserView", () => {
     expect(footerPath.className).toContain("break-all");
   });
 
-  it("shows Upload Folder only when folder uploads are supported", () => {
+  it("shows Upload ZIP in folder-capable scopes even when native folder picking is unsupported", () => {
     const props = {
       busy: false,
       notice: null,
@@ -711,6 +711,7 @@ describe("BrowserView", () => {
       onReplaceArt: vi.fn(),
       onSearchChange: vi.fn(),
       onUploadFolder: vi.fn(),
+      onUploadZip: vi.fn(),
       onUploadFiles: vi.fn(),
       response: {
         scope: "files" as const,
@@ -730,13 +731,15 @@ describe("BrowserView", () => {
     const { rerender } = render(<BrowserView {...props} canUploadFolder={false} />);
 
     expect(screen.queryByRole("button", { name: "Upload Folder" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Upload ZIP" })).toBeTruthy();
 
     rerender(<BrowserView {...props} canUploadFolder />);
 
     expect(screen.getByRole("button", { name: "Upload Folder" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Upload ZIP" })).toBeTruthy();
   });
 
-  it("uploads dropped directories only when folder uploads are supported", async () => {
+  it("uploads dropped directories in folder-capable scopes even without native folder picking", async () => {
     const onUploadFiles = vi.fn();
     const props = {
       busy: false,
@@ -767,17 +770,8 @@ describe("BrowserView", () => {
       transfer: { active: false, label: "", progress: 0 },
     };
     const file = new File(["rom"], "Pokemon Emerald.gba", { type: "application/octet-stream" });
-    const { container, rerender } = render(<BrowserView {...props} canUploadFolder={false} />);
+    const { container } = render(<BrowserView {...props} canUploadFolder={false} />);
     const zone = container.firstElementChild as HTMLElement;
-
-    fireEvent.drop(zone, {
-      dataTransfer: createDirectoryDropDataTransfer("Favorites", [file]),
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(onUploadFiles).not.toHaveBeenCalled();
-
-    rerender(<BrowserView {...props} canUploadFolder />);
 
     fireEvent.drop(zone, {
       dataTransfer: createDirectoryDropDataTransfer("Favorites", [file]),
@@ -787,8 +781,9 @@ describe("BrowserView", () => {
       expect(onUploadFiles).toHaveBeenCalledTimes(1);
     });
     expect(
-      (onUploadFiles.mock.calls[0][0][0] as File & { webkitRelativePath?: string }).webkitRelativePath,
+      (onUploadFiles.mock.calls[0][0].files[0] as File & { webkitRelativePath?: string }).webkitRelativePath,
     ).toBe("Favorites/Pokemon Emerald.gba");
+    expect(onUploadFiles.mock.calls[0][0].directories).toEqual(["Favorites"]);
   });
 
   it("renders library browser chrome with ROM-only folder actions and a search bar", () => {
@@ -806,6 +801,7 @@ describe("BrowserView", () => {
         onReplaceArt={vi.fn()}
         onSearchChange={vi.fn()}
         onUploadFolder={vi.fn()}
+        onUploadZip={vi.fn()}
         onUploadFiles={vi.fn()}
         response={{
           scope: "roms",
@@ -839,6 +835,7 @@ describe("BrowserView", () => {
     expect(screen.getByText("1 item")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Upload File" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Upload Folder" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Upload ZIP" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "New Folder" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Refresh" })).toBeTruthy();
     expect(screen.getByPlaceholderText("Search in current folder")).toBeTruthy();
