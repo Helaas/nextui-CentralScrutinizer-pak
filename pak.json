@@ -1,12 +1,13 @@
 {
   "name": "The Central Scrutinizer",
-  "version": "v0.1.3",
+  "version": "v0.1.4",
   "type": "TOOL",
   "description": "Browser-based device manager for NextUI handhelds, letting users manage their devices from web or mobile browsers with library browsing, file tools, collections, screenshots, logs, artwork replacement, and optional background mode.",
   "author": "helaas",
   "release_filename": "Central.Scrutinizer.pakz",
   "repo_url": "https://github.com/Helaas/nextui-CentralScrutinizer-pak",
   "changelog": {
+    "v0.1.4": "Add folder and ZIP/.pakz uploads with extraction modes, conflict previews, and safer partial-upload handling.",
     "v0.1.3": "Properly handle large folders in the browser, add pagination system.",
     "v0.1.2": "Adds multi-select file actions, drag-to-move support, clearer auto-dismissing browser notices, mobile layout refinements, and safer rename fallback handling.",
     "v0.1.1": "Small bug fixes and improvements to the experience on mobile browsers.",

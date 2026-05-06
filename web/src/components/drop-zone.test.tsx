@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BROWSER_MOVE_DRAG_TYPE } from "../lib/drag-types";
-import { collectDroppedFiles, DropZone } from "./drop-zone";
+import { collectDroppedFiles, collectDroppedUploadSelection, DropZone } from "./drop-zone";
 
 class MockDataTransfer {
   items: { kind: string; type: string; getAsFile: () => File; webkitGetAsEntry?: () => null }[] = [];
@@ -14,7 +14,23 @@ class MockDataTransfer {
   }
 }
 
-function createFileEntry(file: File) {
+type MockFileEntry = {
+  isDirectory: false;
+  isFile: true;
+  name: string;
+  file: (cb: (value: File) => void) => void;
+};
+
+type MockDirectoryEntry = {
+  createReader: () => { readEntries: (cb: (entries: MockEntry[]) => void) => void };
+  isDirectory: true;
+  isFile: false;
+  name: string;
+};
+
+type MockEntry = MockFileEntry | MockDirectoryEntry;
+
+function createFileEntry(file: File): MockFileEntry {
   return {
     isDirectory: false,
     isFile: true,
@@ -25,13 +41,13 @@ function createFileEntry(file: File) {
   };
 }
 
-function createDirectoryEntry(name: string, batches: Array<ReturnType<typeof createFileEntry>[]>) {
+function createDirectoryEntry(name: string, batches: MockEntry[][]): MockDirectoryEntry {
   return {
     createReader: () => {
       let index = 0;
 
       return {
-        readEntries: (cb: (entries: ReturnType<typeof createFileEntry>[]) => void) => {
+        readEntries: (cb: (entries: MockEntry[]) => void) => {
           cb(batches[index] ?? []);
           index += 1;
         },
@@ -126,7 +142,8 @@ describe("DropZone", () => {
     await waitFor(() => {
       expect(onDrop).toHaveBeenCalledTimes(1);
     });
-    expect(onDrop.mock.calls[0][0]).toHaveLength(1);
+    expect(onDrop.mock.calls[0][0].files).toEqual([file]);
+    expect(onDrop.mock.calls[0][0].directories).toEqual([]);
   });
 
   it("hides the overlay after a drop", async () => {
@@ -254,5 +271,39 @@ describe("collectDroppedFiles", () => {
       "Favorites/Pokemon Emerald.gba",
       "Favorites/Metroid Fusion.gba",
     ]);
+  });
+
+  it("returns empty directories from dropped directory trees", async () => {
+    const emerald = new File(["emerald"], "Pokemon Emerald.gba", { type: "application/octet-stream" });
+    const dt = {
+      items: [
+        {
+          kind: "file",
+          webkitGetAsEntry: () =>
+            createDirectoryEntry("Favorites", [
+              [
+                createDirectoryEntry("Empty", [[]]),
+                createDirectoryEntry("Nested", [[createDirectoryEntry("Leaf", [[]])], []]),
+                createFileEntry(emerald),
+              ],
+              [],
+            ]),
+        },
+      ],
+      files: [],
+    } as unknown as DataTransfer;
+
+    const result = await collectDroppedUploadSelection(dt);
+
+    expect(result.directories).toEqual([
+      "Favorites",
+      "Favorites/Empty",
+      "Favorites/Nested",
+      "Favorites/Nested/Leaf",
+    ]);
+    expect(result.files).toHaveLength(1);
+    expect((result.files[0] as File & { webkitRelativePath?: string }).webkitRelativePath).toBe(
+      "Favorites/Pokemon Emerald.gba",
+    );
   });
 });

@@ -12,19 +12,23 @@ import type {
   SessionResponse,
   StatusResponse,
   TerminalSessionResponse,
+  UploadPreviewRequest,
+  UploadPreviewResponse,
   UploadRequest,
   WriteRequest,
 } from "./types";
 
 export class ApiError extends Error {
   code?: string;
+  path?: string;
   status: number;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, path?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.path = path;
   }
 }
 
@@ -43,13 +47,18 @@ export type UploadHandle = {
 export type UploadSummary = {
   uploaded: number;
   failed: number;
+  directoriesCreated: number;
+  directoriesFailed: number;
   cancelled: boolean;
+  errorMessage?: string | null;
 };
 
 export type UploadBatchedHandle = {
   cancel: () => void;
   promise: Promise<UploadSummary>;
 };
+
+const UPLOAD_PREVIEW_DISPLAY_LIMIT = 5;
 
 export const PAIRING_UNAVAILABLE_MESSAGE =
   "Pairing is unavailable while the app is running in background mode. Reopen it on the handheld to pair or change settings.";
@@ -115,6 +124,30 @@ async function readErrorCode(response: Response): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+function parseUploadError(xhr: XMLHttpRequest): Error {
+  try {
+    const body = JSON.parse(xhr.responseText) as { error?: string; path?: string };
+    const errorPath = typeof body.path === "string" && body.path.length > 0 ? body.path : undefined;
+    const pathLabel = errorPath ? ` "${errorPath}"` : "";
+
+    if (body.error === "upload_conflict") {
+      return new ApiError(`Upload blocked because${pathLabel} already exists.`, xhr.status, body.error, errorPath);
+    }
+    if (body.error === "upload_type_conflict") {
+      return new ApiError(
+        `Upload blocked because${pathLabel} conflicts with an existing file or folder.`,
+        xhr.status,
+        body.error,
+        errorPath,
+      );
+    }
+  } catch {
+    // Ignore non-JSON upload failures.
+  }
+
+  return new Error("Upload failed");
 }
 
 export function buildDownloadUrl(scope: BrowserScope, path: string, tag?: string, csrf?: string | null): string {
@@ -267,6 +300,91 @@ export async function searchFiles(path: string | undefined, query: string, csrf:
   return expectJson<FileSearchResponse>(response, "File search failed");
 }
 
+type PreviewUploadOptions = {
+  signal?: AbortSignal;
+};
+
+export async function previewUpload(
+  request: UploadPreviewRequest,
+  csrf: string,
+  options?: PreviewUploadOptions,
+): Promise<UploadPreviewResponse> {
+  const form = new FormData();
+
+  form.set("scope", request.scope);
+  if (request.tag) {
+    form.set("tag", request.tag);
+  }
+  if (request.path) {
+    form.set("path", request.path);
+  }
+  for (const directory of request.directories ?? []) {
+    form.append("directory", directory);
+  }
+  for (const filePath of request.filePaths) {
+    form.append("file_path", filePath);
+  }
+
+  const response = await fetch("/api/upload/preview", {
+    method: "POST",
+    headers: csrfHeaders(csrf),
+    body: form,
+    signal: options?.signal,
+  });
+
+  return expectJson<UploadPreviewResponse>(response, "Upload preview failed");
+}
+
+export async function previewUploadBatched(
+  request: UploadPreviewRequest,
+  csrf: string,
+  options?: PreviewUploadOptions,
+): Promise<UploadPreviewResponse> {
+  const { directories = [], filePaths, ...rest } = request;
+  const overwriteable: UploadPreviewResponse["overwriteable"] = [];
+  const blocking: UploadPreviewResponse["blocking"] = [];
+  const allOverwriteable = new Map<string, UploadPreviewResponse["overwriteable"][number]>();
+  const allBlocking = new Map<string, UploadPreviewResponse["blocking"][number]>();
+
+  const appendUnique = <T extends { path: string; kind: string }>(allItems: Map<string, T>, target: T[], items: T[]) => {
+    for (const item of items) {
+      const key = `${item.kind}:${item.path}`;
+
+      if (allItems.has(key)) {
+        continue;
+      }
+      allItems.set(key, item);
+      if (target.length >= UPLOAD_PREVIEW_DISPLAY_LIMIT) {
+        continue;
+      }
+      target.push(item);
+    }
+  };
+
+  for (let offset = 0; offset < directories.length; offset += UPLOAD_BATCH_SIZE) {
+    const batch = directories.slice(offset, offset + UPLOAD_BATCH_SIZE);
+    const response = await previewUpload({ ...rest, directories: batch, filePaths: [] }, csrf, options);
+
+    appendUnique(allOverwriteable, overwriteable, response.overwriteable);
+    appendUnique(allBlocking, blocking, response.blocking);
+  }
+
+  for (let offset = 0; offset < filePaths.length; offset += UPLOAD_BATCH_SIZE) {
+    const batch = filePaths.slice(offset, offset + UPLOAD_BATCH_SIZE);
+    const response = await previewUpload({ ...rest, directories: [], filePaths: batch }, csrf, options);
+
+    appendUnique(allOverwriteable, overwriteable, response.overwriteable);
+    appendUnique(allBlocking, blocking, response.blocking);
+  }
+
+  return {
+    overwriteableCount: allOverwriteable.size,
+    blockingCount: allBlocking.size,
+    overwriteable,
+    blocking,
+  };
+}
+
 export function beginUploadFiles(
   request: UploadRequest,
   csrf: string,
@@ -282,10 +400,14 @@ export function beginUploadFiles(
     if (request.path) {
       form.set("path", request.path);
     }
+    if (request.overwriteExisting) {
+      form.set("overwrite", "1");
+    }
+    for (const directory of request.directories ?? []) {
+      form.append("directory", directory);
+    }
     for (const file of request.files) {
-      const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
-
-      form.append("file", file, relativePath && relativePath.length > 0 ? relativePath : file.name);
+      form.append("file", file, uploadFileClientPath(file));
     }
 
     xhr.open("POST", "/api/upload");
@@ -300,7 +422,7 @@ export function beginUploadFiles(
         resolve();
         return;
       }
-      reject(new Error("Upload failed"));
+      reject(parseUploadError(xhr));
     });
     xhr.addEventListener("error", () => reject(new Error("Upload failed")));
     xhr.addEventListener("abort", () => reject(new UploadAbortedError()));
@@ -317,6 +439,30 @@ export function beginUploadFiles(
 
 export const UPLOAD_BATCH_SIZE = 32;
 
+function uploadFileClientPath(file: File): string {
+  const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
+
+  return relativePath && relativePath.length > 0 ? relativePath : file.name;
+}
+
+function joinUploadPath(base: string | undefined, child: string): string {
+  if (base && child) {
+    return `${base}/${child}`;
+  }
+
+  return base || child;
+}
+
+function uploadedBeforeConflict(batch: File[], basePath: string | undefined, error: unknown): number | null {
+  if (!(error instanceof ApiError) || !error.path) {
+    return null;
+  }
+
+  const conflictIndex = batch.findIndex((file) => joinUploadPath(basePath, uploadFileClientPath(file)) === error.path);
+
+  return conflictIndex >= 0 ? conflictIndex : null;
+}
+
 export async function uploadFiles(
   request: UploadRequest,
   csrf: string,
@@ -327,7 +473,7 @@ export async function uploadFiles(
   if (summary.cancelled) {
     throw new UploadAbortedError();
   }
-  if (summary.failed > 0) {
+  if (summary.failed > 0 || summary.directoriesFailed > 0) {
     throw new Error("Upload failed");
   }
 }
@@ -346,11 +492,47 @@ export function beginUploadFilesBatched(
   let activeHandle: UploadHandle | null = null;
 
   const promise = (async (): Promise<UploadSummary> => {
-    const { files, ...rest } = request;
+    const { files, directories = [], ...rest } = request;
     const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
-    let uploadedBytes = 0;
+    const totalWork = totalBytes > 0 ? totalBytes + directories.length : files.length + directories.length;
+    let completedWork = 0;
     let uploaded = 0;
     let failed = 0;
+    let directoriesCreated = 0;
+    let directoriesFailed = 0;
+    let errorMessage: string | null = null;
+
+    const reportProgress = (workDone: number) => {
+      if (onProgress && totalWork > 0) {
+        onProgress(Math.round((workDone / totalWork) * 100));
+      }
+    };
+
+    for (const directory of directories) {
+      if (cancelled) {
+        break;
+      }
+
+      const handle = beginUploadFiles({ ...rest, files: [], directories: [directory] }, csrf);
+
+      activeHandle = handle;
+      try {
+        await handle.promise;
+        directoriesCreated += 1;
+      } catch (error) {
+        if (error instanceof UploadAbortedError) {
+          cancelled = true;
+        } else {
+          directoriesFailed += 1;
+          errorMessage = error instanceof Error ? error.message : errorMessage;
+        }
+      } finally {
+        activeHandle = null;
+      }
+
+      completedWork += 1;
+      reportProgress(completedWork);
+    }
 
     for (let offset = 0; offset < files.length; offset += UPLOAD_BATCH_SIZE) {
       if (cancelled) {
@@ -361,10 +543,10 @@ export function beginUploadFilesBatched(
       const batchBytes = batch.reduce((sum, f) => sum + f.size, 0);
 
       const handle = beginUploadFiles({ ...rest, files: batch }, csrf, (batchPct) => {
-        if (onProgress && totalBytes > 0) {
-          const batchLoaded = (batchPct / 100) * batchBytes;
-          onProgress(Math.round(((uploadedBytes + batchLoaded) / totalBytes) * 100));
-        }
+        const batchWork = totalBytes > 0 ? batchBytes : batch.length;
+        const batchLoaded = (batchPct / 100) * batchWork;
+
+        reportProgress(completedWork + batchLoaded);
       });
 
       activeHandle = handle;
@@ -375,19 +557,25 @@ export function beginUploadFilesBatched(
         if (error instanceof UploadAbortedError) {
           cancelled = true;
         } else {
-          failed += batch.length;
+          const partialUploaded = uploadedBeforeConflict(batch, rest.path, error);
+
+          if (partialUploaded === null) {
+            failed += batch.length;
+          } else {
+            uploaded += partialUploaded;
+            failed += batch.length - partialUploaded;
+          }
+          errorMessage = error instanceof Error ? error.message : errorMessage;
         }
       } finally {
         activeHandle = null;
       }
 
-      uploadedBytes += batchBytes;
-      if (onProgress && totalBytes > 0) {
-        onProgress(Math.round((uploadedBytes / totalBytes) * 100));
-      }
+      completedWork += totalBytes > 0 ? batchBytes : batch.length;
+      reportProgress(completedWork);
     }
 
-    return { uploaded, failed, cancelled };
+    return { uploaded, failed, directoriesCreated, directoriesFailed, cancelled, errorMessage };
   })();
 
   return {

@@ -6,6 +6,7 @@ import { AppShell } from "../components/app-shell";
 import { BrowserView } from "../components/browser-view";
 import { DashboardShell } from "../components/dashboard-shell";
 import { FileEditorModal } from "../components/file-editor-modal";
+import { ZipExtractDialog } from "../components/zip-extract-dialog";
 import { LogsToolView } from "../components/logs-tool-view";
 import { MacDotCleanToolView } from "../components/mac-dot-clean-tool-view";
 import { PairScreen } from "../components/pair-screen";
@@ -25,6 +26,7 @@ import {
   getSession,
   pairBrowser,
   pairBrowserQr,
+  previewUploadBatched,
   readTextFile,
   replaceArt,
   renameItem,
@@ -33,6 +35,7 @@ import {
   writeTextFile,
 } from "../lib/api";
 import { getBrowserId } from "../lib/browser-id";
+import { parseZipFile, uploadPathsFromZip, uploadSelectionFromZip, type ParsedZipPreview } from "../lib/zip-upload";
 import { useBrowserPagination } from "../lib/use-browser-pagination";
 import {
   createPlatformDisplayNames,
@@ -54,6 +57,7 @@ import { PLAINTEXT_MAX_BYTES } from "../lib/plaintext";
 import type {
   BrowserEntry,
   BrowserScope,
+  ExtractStrategy,
   FileSearchResult,
   LibraryEmuFilter,
   PlatformGroup,
@@ -61,9 +65,15 @@ import type {
   PlatformResource,
   SessionResponse,
   TransferState,
+  UploadPreviewConflict,
+  UploadPreviewResponse,
+  UploadSelection,
+  ZipExtractOptions,
 } from "../lib/types";
 
 type DirectoryCapableInput = HTMLInputElement & { webkitdirectory?: boolean };
+const ZIP_PREVIEW_TIMEOUT_MS = 15_000;
+const ZIP_CONFLICT_DISPLAY_LIMIT = 5;
 
 function getInitialView(): AppViewState {
   if (typeof window === "undefined") {
@@ -120,7 +130,7 @@ function browserSupportsDirectoryUpload(): boolean {
   return "webkitdirectory" in (document.createElement("input") as DirectoryCapableInput);
 }
 
-async function pickFolderFiles(): Promise<File[]> {
+async function pickFolderFiles(): Promise<UploadSelection> {
   return new Promise((resolve) => {
     const input = document.createElement("input") as DirectoryCapableInput;
 
@@ -128,14 +138,37 @@ async function pickFolderFiles(): Promise<File[]> {
     input.multiple = true;
     input.webkitdirectory = true;
     input.addEventListener("change", () => {
-      resolve(Array.from(input.files ?? []));
+      resolve({ directories: [], files: Array.from(input.files ?? []) });
     });
     input.click();
   });
 }
 
+function hasUploadItems(selection: UploadSelection): boolean {
+  return selection.files.length > 0 || selection.directories.length > 0;
+}
+
+function formatUploadCount(count: number, singular: string): string | null {
+  return count > 0 ? `${count} ${singular}${count === 1 ? "" : "s"}` : null;
+}
+
+function formatUploadParts(files: number, directories: number): string {
+  return [formatUploadCount(files, "file"), formatUploadCount(directories, "folder")]
+    .filter((part): part is string => Boolean(part))
+    .join(" and ");
+}
+
 function formatItemCount(count: number): string {
   return `${count} item${count === 1 ? "" : "s"}`;
+}
+
+function zipInternalConflictsToPreflight(conflicts: UploadPreviewConflict[]): UploadPreviewResponse {
+  return {
+    blocking: conflicts.slice(0, ZIP_CONFLICT_DISPLAY_LIMIT),
+    blockingCount: conflicts.length,
+    overwriteable: [],
+    overwriteableCount: 0,
+  };
 }
 
 function normalizeSession(
@@ -170,6 +203,10 @@ function getPairErrorMessage(error: unknown): string {
 
 function getReconnectMessage(): string {
   return "Connection restored, but this browser is no longer trusted. Refresh the PIN or QR code on the device to pair again.";
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function getPairingUnavailableMessage(): string {
@@ -217,6 +254,53 @@ export default function Page() {
     loadError: string | null;
     saving: boolean;
   } | null>(null);
+  const [zipExtractDialog, setZipExtractDialog] = useState<{
+    preview: ParsedZipPreview;
+    strategy: ExtractStrategy;
+    overwriteExisting: boolean;
+    preflight: UploadPreviewResponse | null;
+    checking: boolean;
+  } | null>(null);
+  const zipPreviewAbortRef = useRef<{
+    controller: AbortController;
+    timeoutId: ReturnType<typeof setTimeout>;
+    timedOut: boolean;
+  } | null>(null);
+
+  function clearZipPreviewAbort(abort = true) {
+    const activeRequest = zipPreviewAbortRef.current;
+
+    if (!activeRequest) {
+      return;
+    }
+    clearTimeout(activeRequest.timeoutId);
+    zipPreviewAbortRef.current = null;
+    if (abort) {
+      activeRequest.controller.abort();
+    }
+  }
+
+  function beginZipPreviewAbort() {
+    const controller = new AbortController();
+    const activeRequest = {
+      controller,
+      timeoutId: setTimeout(() => {
+        activeRequest.timedOut = true;
+        controller.abort();
+      }, ZIP_PREVIEW_TIMEOUT_MS),
+      timedOut: false,
+    };
+
+    clearZipPreviewAbort();
+    zipPreviewAbortRef.current = activeRequest;
+    return activeRequest;
+  }
+
+  useEffect(() => {
+    return () => {
+      clearZipPreviewAbort();
+    };
+  }, []);
 
   function navigate(next: AppViewState, replace = false) {
     setViewState(next);
@@ -666,17 +750,19 @@ export default function Page() {
     }
   }
 
-  const handleUploadFiles = async (files: File[]) => {
+  const handleUploadSelection = async (selection: UploadSelection, options?: { overwriteExisting?: boolean }) => {
     const scopeState = currentScopeState();
     const csrf = session.csrf;
 
-    if (!scopeState || !csrf || files.length === 0) {
+    if (!scopeState || !csrf || !hasUploadItems(selection)) {
       return;
     }
 
     await withBusy(async () => {
-      const label = `Uploading ${files.length} file${files.length === 1 ? "" : "s"}`;
-      const upload = beginUploadFilesBatched({ ...scopeState, files }, csrf, (progress) => {
+      const totalFiles = selection.files.length;
+      const totalDirectories = selection.directories.length;
+      const label = `Uploading ${formatUploadParts(totalFiles, totalDirectories)}`;
+      const upload = beginUploadFilesBatched({ ...scopeState, ...selection, overwriteExisting: options?.overwriteExisting }, csrf, (progress) => {
         setTransfer((current) => ({ ...current, progress }));
       });
 
@@ -695,18 +781,27 @@ export default function Page() {
          */
         await refreshCurrentData();
 
-        const plural = (n: number) => (n === 1 ? "" : "s");
+        const uploadedParts = formatUploadParts(summary.uploaded, summary.directoriesCreated);
+        const failedParts = formatUploadParts(summary.failed, summary.directoriesFailed);
+        const noneUploaded = summary.uploaded === 0 && summary.directoriesCreated === 0;
+        const anyFailed = summary.failed > 0 || summary.directoriesFailed > 0;
 
-        if (summary.cancelled && summary.uploaded === 0) {
+        if (summary.cancelled && noneUploaded) {
           setNotice("Upload cancelled.");
         } else if (summary.cancelled) {
-          setNotice(`Upload cancelled after ${summary.uploaded} of ${files.length} file${plural(files.length)}.`);
-        } else if (summary.failed > 0 && summary.uploaded === 0) {
-          setNotice("Upload failed.");
-        } else if (summary.failed > 0) {
-          setNotice(`Uploaded ${summary.uploaded} file${plural(summary.uploaded)}, ${summary.failed} failed.`);
+          setNotice(`Upload cancelled after ${uploadedParts}.`);
+        } else if (anyFailed && noneUploaded && summary.errorMessage) {
+          setNotice(summary.errorMessage);
+        } else if (anyFailed && noneUploaded) {
+          setNotice(`Upload failed${failedParts ? ` (${failedParts} failed)` : ""}.`);
+        } else if (anyFailed) {
+          setNotice(
+            summary.errorMessage
+              ? `Uploaded ${uploadedParts}, ${failedParts} failed. ${summary.errorMessage}`
+              : `Uploaded ${uploadedParts}, ${failedParts} failed.`,
+          );
         } else {
-          setNotice(`Uploaded ${summary.uploaded} file${plural(summary.uploaded)}.`);
+          setNotice(`Uploaded ${uploadedParts}.`);
         }
       } finally {
         clearTransfer();
@@ -721,10 +816,152 @@ export default function Page() {
       return;
     }
 
-    const files = await pickFolderFiles();
+    const selection = await pickFolderFiles();
 
-    if (files.length > 0) {
-      await handleUploadFiles(files);
+    if (hasUploadItems(selection)) {
+      await handleUploadSelection(selection);
+    }
+  };
+
+  const handleUploadZip = async () => {
+    const scopeState = currentScopeState();
+
+    if (!scopeState || (scopeState.scope !== "roms" && scopeState.scope !== "files")) {
+      return;
+    }
+
+    const file = await pickSingleFile(".zip,.pakz,application/zip,application/x-zip-compressed");
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const preview = await parseZipFile(file);
+
+      if (preview.entries.length === 0) {
+        setNotice("ZIP contains no uploadable files or folders.");
+        return;
+      }
+
+      setZipExtractDialog({
+        preview,
+        strategy: "extract-into-folder",
+        overwriteExisting: false,
+        preflight: null,
+        checking: false,
+      });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "ZIP upload failed.");
+    }
+  };
+
+  const handleConfirmZipExtract = async ({ strategy, overwriteExisting }: ZipExtractOptions) => {
+    if (!zipExtractDialog || !session.csrf) {
+      return;
+    }
+
+    const scopeState = currentScopeState();
+
+    if (!scopeState) {
+      return;
+    }
+
+    const { preview } = zipExtractDialog;
+    const uploadPaths = uploadPathsFromZip(preview, strategy);
+
+    if (uploadPaths.internalConflicts.length > 0) {
+      setZipExtractDialog((current) =>
+        current
+          ? {
+              ...current,
+              strategy,
+              overwriteExisting,
+              checking: false,
+              preflight: zipInternalConflictsToPreflight(uploadPaths.internalConflicts),
+            }
+          : current,
+      );
+      return;
+    }
+
+    if (uploadPaths.filePaths.length === 0 && uploadPaths.directories.length === 0) {
+      setNotice("ZIP contains no uploadable files or folders.");
+      return;
+    }
+
+    setZipExtractDialog((current) =>
+      current
+        ? {
+            ...current,
+            strategy,
+            overwriteExisting,
+            checking: true,
+            preflight: null,
+          }
+        : current,
+    );
+
+    const previewRequest = beginZipPreviewAbort();
+
+    try {
+      const preflight = await previewUploadBatched(
+        {
+          ...scopeState,
+          directories: uploadPaths.explicitDirectories,
+          filePaths: uploadPaths.filePaths,
+        },
+        session.csrf,
+        { signal: previewRequest.controller.signal },
+      );
+      if (zipPreviewAbortRef.current === previewRequest) {
+        clearTimeout(previewRequest.timeoutId);
+        zipPreviewAbortRef.current = null;
+      }
+
+      if (preflight.blockingCount > 0 || (!overwriteExisting && preflight.overwriteableCount > 0)) {
+        setZipExtractDialog((current) =>
+          current
+            ? {
+                ...current,
+                strategy,
+                overwriteExisting,
+                checking: false,
+                preflight,
+              }
+            : current,
+        );
+        return;
+      }
+
+      const selection = await uploadSelectionFromZip(preview, strategy);
+
+      if (!hasUploadItems(selection)) {
+        setZipExtractDialog((current) => (current ? { ...current, checking: false } : current));
+        setNotice("ZIP contains no uploadable files or folders.");
+        return;
+      }
+
+      setZipExtractDialog(null);
+      await handleUploadSelection(selection, { overwriteExisting });
+    } catch (error) {
+      const isCurrentPreviewRequest = zipPreviewAbortRef.current === previewRequest;
+      const timedOut = isCurrentPreviewRequest && previewRequest.timedOut;
+      const abortError = isAbortError(error);
+
+      if (isCurrentPreviewRequest) {
+        clearZipPreviewAbort(false);
+        setZipExtractDialog((current) => (current ? { ...current, checking: false } : current));
+      } else if (!abortError) {
+        setZipExtractDialog((current) => (current ? { ...current, checking: false } : current));
+      }
+      if (abortError) {
+        if (timedOut) {
+          setNotice("ZIP conflict check timed out.");
+        }
+        return;
+      }
+      setNotice(error instanceof Error ? error.message : "ZIP upload failed.");
     }
   };
 
@@ -1270,8 +1507,11 @@ export default function Page() {
         onUploadFolder={() => {
           void handleUploadFolder();
         }}
-        onUploadFiles={(files) => {
-          void handleUploadFiles(files);
+        onUploadZip={() => {
+          void handleUploadZip();
+        }}
+        onUploadFiles={(selection) => {
+          void handleUploadSelection(selection);
         }}
         csrf={session.csrf}
         response={browserResponse!}
@@ -1394,6 +1634,44 @@ export default function Page() {
               void handleSaveEditor(nextContent);
             }}
             saving={editor.saving}
+          />
+        ) : null}
+        {zipExtractDialog ? (
+          <ZipExtractDialog
+            checking={zipExtractDialog.checking}
+            conflicts={zipExtractDialog.preflight}
+            overwriteExisting={zipExtractDialog.overwriteExisting}
+            preview={zipExtractDialog.preview}
+            onCancel={() => {
+              clearZipPreviewAbort();
+              setZipExtractDialog(null);
+            }}
+            onConfirm={(options) => {
+              void handleConfirmZipExtract(options);
+            }}
+            onOverwriteChange={(overwriteExisting) => {
+              setZipExtractDialog((current) =>
+                current
+                  ? {
+                      ...current,
+                      overwriteExisting,
+                      preflight: null,
+                    }
+                  : current,
+              );
+            }}
+            onStrategyChange={(strategy) => {
+              setZipExtractDialog((current) =>
+                current
+                  ? {
+                      ...current,
+                      strategy,
+                      preflight: null,
+                    }
+                  : current,
+              );
+            }}
+            strategy={zipExtractDialog.strategy}
           />
         ) : null}
       </AppShell>

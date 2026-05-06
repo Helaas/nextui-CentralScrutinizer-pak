@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "test": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:upload": "playwright test -c playwright.upload.config.ts"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

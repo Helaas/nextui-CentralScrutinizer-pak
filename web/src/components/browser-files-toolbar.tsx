@@ -12,6 +12,7 @@ export function BrowserFilesToolbar({
   onRunSearch,
   onSearchChange,
   onUploadFolder,
+  onUploadZip,
   onUploadFile,
   response,
   searchResultsActive = false,
@@ -27,6 +28,7 @@ export function BrowserFilesToolbar({
   onRunSearch?: () => void;
   onSearchChange: (value: string) => void;
   onUploadFolder?: () => void;
+  onUploadZip?: () => void;
   onUploadFile: () => void;
   response: BrowserResponse;
   searchResultsActive?: boolean;
@@ -54,6 +56,16 @@ export function BrowserFilesToolbar({
                 type="button"
               >
                 Upload Folder
+              </button>
+            ) : null}
+            {onUploadZip ? (
+              <button
+                className="rounded-md border border-[var(--border)] bg-[var(--panel-alt)] px-4 py-2 text-sm font-medium text-[var(--text)] transition hover:border-[var(--accent)]/50 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={busy}
+                onClick={onUploadZip}
+                type="button"
+              >
+                Upload ZIP
               </button>
             ) : null}
             <button

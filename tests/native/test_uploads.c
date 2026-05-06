@@ -401,6 +401,51 @@ static void test_reserved_temp_paths_are_unique(void) {
     assert(rmdir(sandbox_template) == 0);
 }
 
+static void test_prepare_final_directory_merges_existing_directories(void) {
+    char sandbox_template[] = "/tmp/cs-upload-dirs-XXXXXX";
+    char existing_dir[CS_PATH_MAX];
+    char nested_dir[CS_PATH_MAX];
+    char leaf_dir[CS_PATH_MAX];
+    char file_collision[CS_PATH_MAX];
+
+    assert(mkdtemp(sandbox_template) != NULL);
+    path_join(existing_dir, sizeof(existing_dir), sandbox_template, "Existing");
+    path_join(nested_dir, sizeof(nested_dir), existing_dir, "Nested");
+    path_join(leaf_dir, sizeof(leaf_dir), nested_dir, "Leaf");
+    path_join(file_collision, sizeof(file_collision), sandbox_template, "FileCollision");
+
+    assert(mkdir(existing_dir, 0775) == 0);
+    write_file(file_collision, "not-a-directory");
+
+    assert(cs_upload_prepare_final_directory(sandbox_template,
+                                             sandbox_template,
+                                             "Existing",
+                                             0)
+           == 0);
+    assert(cs_upload_prepare_final_directory(sandbox_template,
+                                             sandbox_template,
+                                             "Existing/Nested/Leaf",
+                                             0)
+           == 0);
+    assert(access(leaf_dir, F_OK) == 0);
+    assert(cs_upload_prepare_final_directory(sandbox_template,
+                                             sandbox_template,
+                                             "FileCollision/Child",
+                                             0)
+           == -1);
+    assert(cs_upload_prepare_final_directory(sandbox_template,
+                                             sandbox_template,
+                                             "../escape",
+                                             0)
+           == -1);
+
+    assert(rmdir(leaf_dir) == 0);
+    assert(rmdir(nested_dir) == 0);
+    assert(rmdir(existing_dir) == 0);
+    assert(remove(file_collision) == 0);
+    assert(rmdir(sandbox_template) == 0);
+}
+
 static void test_no_replace_fallback_path(void) {
     assert(setenv("CS_FORCE_RENAME_NOREPLACE_FALLBACK", "1", 1) == 0);
     test_existing_destination_is_rejected();
@@ -477,6 +522,7 @@ int main(void) {
     test_concurrent_no_replace_promotion();
     test_no_replace_fallback_path();
     test_reserved_temp_paths_are_unique();
+    test_prepare_final_directory_merges_existing_directories();
 
     return 0;
 }
