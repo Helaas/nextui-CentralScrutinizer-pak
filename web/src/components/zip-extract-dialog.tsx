@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 import { computeUploadPath, type ParsedZipPreview, uploadPathsFromZip } from "../lib/zip-upload";
 import type { ExtractStrategy, UploadPreviewConflict, UploadPreviewResponse, ZipExtractOptions } from "../lib/types";
 
@@ -122,19 +124,24 @@ export function ZipExtractDialog({
 }: ZipExtractDialogProps) {
   const visibleOptions = getVisibleOptions(preview);
   const selectedStrategy = getCanonicalStrategy(preview, visibleOptions, strategy);
+  const [showMobileSelectedPreview, setShowMobileSelectedPreview] = useState(false);
   const totalRemaining = Math.max(0, preview.entries.length - PREVIEW_LIMIT);
   const overwriteableRemaining = Math.max(0, (conflicts?.overwriteableCount ?? 0) - (conflicts?.overwriteable.length ?? 0));
   const blockingRemaining = Math.max(0, (conflicts?.blockingCount ?? 0) - (conflicts?.blocking.length ?? 0));
+
+  useEffect(() => {
+    setShowMobileSelectedPreview(false);
+  }, [selectedStrategy]);
 
   return (
     <div
       aria-labelledby="zip-extract-title"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-3 sm:items-center sm:p-4"
       role="dialog"
     >
       <div className="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-xl">
-        <div className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-4 py-3 sm:px-5 sm:py-4">
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold text-[var(--text)]" id="zip-extract-title">
               Extract ZIP
@@ -151,44 +158,88 @@ export function ZipExtractDialog({
           </button>
         </div>
 
-        <div className="flex-1 overflow-auto px-5 py-4">
-          <p className="mb-3 text-sm text-[var(--text)]">How would you like to extract the contents?</p>
+        <div className="flex-1 overflow-auto px-4 py-3 sm:px-5 sm:py-4">
+          <p className="mb-2 text-sm text-[var(--text)] sm:mb-3">How would you like to extract the contents?</p>
 
-          {visibleOptions.map((option, index) => (
-            <label
-              key={option.strategy}
-              className={`${index < visibleOptions.length - 1 ? "mb-3 " : ""}block cursor-pointer rounded-xl border p-4 transition ${
-                selectedStrategy === option.strategy
-                  ? "border-[var(--accent)] bg-[var(--accent)]/10"
-                  : "border-[var(--border)] hover:border-[var(--accent)]/30"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <input
-                  checked={selectedStrategy === option.strategy}
-                  className="h-4 w-4 accent-[var(--accent)]"
-                  disabled={checking}
-                  name="extract-strategy"
-                  onChange={() => onStrategyChange(option.strategy)}
-                  type="radio"
-                />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-[var(--text)]">{option.title}</p>
-                  <p className="text-xs text-[var(--muted)]">{option.description}</p>
-                </div>
-              </div>
-              <div className="mt-2 space-y-0.5 pl-7">
-                {option.previewPaths.map((path, pathIndex) => (
-                  <p key={`${path}:${pathIndex}`} className="truncate font-mono text-xs text-[var(--muted)]">
-                    {path}
-                  </p>
-                ))}
-                {totalRemaining > 0 ? <p className="text-xs text-[var(--muted)]">...and {totalRemaining} more</p> : null}
-              </div>
-            </label>
-          ))}
+          {visibleOptions.map((option, index) => {
+              const mobilePreviewRemaining = Math.max(0, option.previewPaths.length - 1) + totalRemaining;
+              const canExpandMobilePreview = option.previewPaths.length > 1 || totalRemaining > 0;
+              const isSelected = selectedStrategy === option.strategy;
 
-          <label className="mt-4 flex items-start gap-3 rounded-xl border border-[var(--border)] p-4">
+              return (
+                <label
+                  key={option.strategy}
+                  className={`${index < visibleOptions.length - 1 ? "mb-2 sm:mb-3 " : ""}block cursor-pointer rounded-xl border p-3 transition sm:p-4 ${
+                    isSelected
+                      ? "border-[var(--accent)] bg-[var(--accent)]/10"
+                      : "border-[var(--border)] hover:border-[var(--accent)]/30"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      checked={isSelected}
+                      className="mt-0.5 h-4 w-4 accent-[var(--accent)]"
+                      disabled={checking}
+                      name="extract-strategy"
+                      onChange={() => onStrategyChange(option.strategy)}
+                      type="radio"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium leading-5 text-[var(--text)]">{option.title}</p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">{option.description}</p>
+                      {option.previewPaths[0] ? (
+                        <div className="mt-2 sm:hidden">
+                          <p className="truncate font-mono text-xs text-[var(--muted)]">{option.previewPaths[0]}</p>
+                          {mobilePreviewRemaining > 0 ? (
+                            <p className="text-xs text-[var(--muted)]">...and {mobilePreviewRemaining} more</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-2 hidden space-y-0.5 pl-7 sm:block">
+                    {option.previewPaths.map((path, pathIndex) => (
+                      <p key={`${path}:${pathIndex}`} className="truncate font-mono text-xs text-[var(--muted)]">
+                        {path}
+                      </p>
+                    ))}
+                    {totalRemaining > 0 ? <p className="text-xs text-[var(--muted)]">...and {totalRemaining} more</p> : null}
+                  </div>
+
+                  {isSelected && canExpandMobilePreview ? (
+                    <div className="mt-2 pl-7 sm:hidden">
+                      <button
+                        aria-expanded={showMobileSelectedPreview}
+                        className="text-xs font-medium text-[var(--accent)] transition hover:text-[var(--accent-strong)]"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setShowMobileSelectedPreview((value) => !value);
+                        }}
+                        type="button"
+                      >
+                        {showMobileSelectedPreview ? "Hide sample paths" : "Show sample paths"}
+                      </button>
+                      {showMobileSelectedPreview ? (
+                        <div className="mt-2 space-y-0.5">
+                          {option.previewPaths.map((path, pathIndex) => (
+                            <p key={`${path}:${pathIndex}`} className="truncate font-mono text-xs text-[var(--muted)]">
+                              {path}
+                            </p>
+                          ))}
+                          {totalRemaining > 0 ? (
+                            <p className="text-xs text-[var(--muted)]">...and {totalRemaining} more</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </label>
+              );
+            })}
+
+          <label className="mt-3 flex items-start gap-3 rounded-xl border border-[var(--border)] p-3 sm:mt-4 sm:p-4">
             <input
               checked={overwriteExisting}
               className="mt-0.5 h-4 w-4 accent-[var(--accent)]"
@@ -205,7 +256,7 @@ export function ZipExtractDialog({
           </label>
 
           {conflicts && (conflicts.overwriteableCount > 0 || conflicts.blockingCount > 0) ? (
-            <section className="mt-4 rounded-xl border border-amber-300/25 bg-amber-500/10 p-4 text-sm text-[var(--text)]">
+            <section className="mt-3 rounded-xl border border-amber-300/25 bg-amber-500/10 p-3 text-sm text-[var(--text)] sm:mt-4 sm:p-4">
               <p className="font-semibold">
                 {conflicts.blockingCount > 0
                   ? "Some paths need attention before extraction can continue."
@@ -257,7 +308,7 @@ export function ZipExtractDialog({
           ) : null}
 
           {checking ? (
-            <section className="mt-4 rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/10 p-4 text-sm text-[var(--text)]">
+            <section className="mt-3 rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/10 p-3 text-sm text-[var(--text)] sm:mt-4 sm:p-4">
               <div className="flex items-start gap-3">
                 <span
                   aria-hidden="true"
@@ -274,7 +325,7 @@ export function ZipExtractDialog({
           ) : null}
         </div>
 
-        <div className="flex flex-col gap-2 border-t border-[var(--line)] px-5 py-4 sm:flex-row sm:items-center sm:justify-end">
+        <div className="flex flex-col gap-2 border-t border-[var(--line)] px-4 py-3 sm:flex-row sm:items-center sm:justify-end sm:px-5 sm:py-4">
           <button
             className="rounded-md border border-[var(--border)] bg-[var(--panel-alt)] px-3 py-2 text-xs font-medium text-[var(--text)] transition hover:border-[var(--accent)]/50 disabled:opacity-50"
             onClick={onCancel}

@@ -110,12 +110,24 @@ describe("ZipExtractDialog", () => {
   it("shows preview paths for all strategies", () => {
     renderDialog();
 
-    expect(screen.getByText("Empty")).toBeTruthy();
-    expect(screen.getByText("game.gba")).toBeTruthy();
-    expect(screen.getByText("archive/Empty")).toBeTruthy();
-    expect(screen.getByText("archive/game.gba")).toBeTruthy();
-    expect(screen.getByText("Root/Empty")).toBeTruthy();
-    expect(screen.getByText("Root/game.gba")).toBeTruthy();
+    expect(screen.getAllByText("Empty").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("game.gba").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("archive/Empty").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("archive/game.gba").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Root/Empty").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Root/game.gba").length).toBeGreaterThan(0);
+  });
+
+  it("keeps mobile sample paths collapsed until requested", () => {
+    renderDialog();
+
+    const toggle = screen.getByRole("button", { name: "Show sample paths" });
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole("button", { name: "Hide sample paths" }).getAttribute("aria-expanded")).toBe("true");
   });
 
   it("hides later ZIP strategies that resolve to duplicate upload paths", () => {
