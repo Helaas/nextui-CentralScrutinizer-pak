@@ -44,9 +44,10 @@ describe("BrowserTable", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /Name/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Size/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Modified/ })).toBeTruthy();
+    expect(screen.getByText("Name")).toBeTruthy();
+    expect(screen.getByText("Size")).toBeTruthy();
+    expect(screen.getByText("Modified")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Name/ })).toBeNull();
     expect(screen.getByText("Action")).toBeTruthy();
     expect(screen.queryByText("Type")).toBeNull();
     expect(screen.queryByText("Select")).toBeNull();
@@ -363,9 +364,10 @@ describe("BrowserTable", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /Name/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Size/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Modified/ })).toBeTruthy();
+    expect(screen.getByText("Name")).toBeTruthy();
+    expect(screen.getByText("Size")).toBeTruthy();
+    expect(screen.getByText("Modified")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Name/ })).toBeNull();
     expect(screen.getByText("Action")).toBeTruthy();
     expect(screen.queryByText("Type")).toBeNull();
     expect(screen.queryByText("Select")).toBeNull();

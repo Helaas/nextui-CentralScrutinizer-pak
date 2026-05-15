@@ -334,6 +334,9 @@ static int cs_browser_write_thumbnail(const char *root,
     return 0;
 }
 
+/* qsort has no context pointer, so the active sort column/direction are duplicated onto every
+ * entry by the caller. Every entry in a given sort carries identical values, so reading them
+ * off `a` is safe. */
 static int cs_browser_sort_compare(const void *left, const void *right) {
     const cs_browser_sort_entry *a = (const cs_browser_sort_entry *) left;
     const cs_browser_sort_entry *b = (const cs_browser_sort_entry *) right;
