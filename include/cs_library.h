@@ -27,6 +27,22 @@ typedef enum cs_browser_list_status {
     CS_BROWSER_LIST_INTERNAL = 2,
 } cs_browser_list_status;
 
+typedef enum cs_browser_sort_column {
+    CS_BROWSER_SORT_NAME = 0,
+    CS_BROWSER_SORT_SIZE = 1,
+    CS_BROWSER_SORT_MODIFIED = 2,
+} cs_browser_sort_column;
+
+typedef enum cs_browser_sort_direction {
+    CS_BROWSER_SORT_ASC = 0,
+    CS_BROWSER_SORT_DESC = 1,
+} cs_browser_sort_direction;
+
+typedef struct cs_browser_sort_options {
+    cs_browser_sort_column column;
+    cs_browser_sort_direction direction;
+} cs_browser_sort_options;
+
 typedef struct cs_browser_entry {
     char name[256];
     char path[CS_PATH_MAX];
@@ -74,5 +90,13 @@ cs_browser_list_status cs_browser_list(const cs_paths *paths,
                                        size_t offset,
                                        const char *query,
                                        cs_browser_result *result);
+cs_browser_list_status cs_browser_list_with_sort(const cs_paths *paths,
+                                                 cs_browser_scope scope,
+                                                 const cs_platform_info *platform,
+                                                 const char *relative_path,
+                                                 size_t offset,
+                                                 const char *query,
+                                                 const cs_browser_sort_options *sort_options,
+                                                 cs_browser_result *result);
 
 #endif

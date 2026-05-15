@@ -52,6 +52,12 @@ export type PlatformsResponse = {
 };
 
 export type BrowserScope = "roms" | "saves" | "bios" | "overlays" | "cheats" | "files";
+export type BrowserSortColumn = "name" | "size" | "modified";
+export type BrowserSortDirection = "asc" | "desc";
+export type BrowserSortState = {
+  column: BrowserSortColumn;
+  direction: BrowserSortDirection;
+};
 
 export type BrowserEntry = {
   name: string;

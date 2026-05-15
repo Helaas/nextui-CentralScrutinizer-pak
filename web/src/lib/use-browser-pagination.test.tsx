@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { BrowserEntry, BrowserResponse, BrowserScope } from "./types";
+import type { BrowserEntry, BrowserResponse, BrowserScope, BrowserSortState } from "./types";
 import { useBrowserPagination } from "./use-browser-pagination";
 
 const mockApi = vi.hoisted(() => ({
@@ -51,15 +51,18 @@ function Harness({
   csrf = "csrf-token",
   enabled = true,
   scope = "files",
+  sort = { column: "name", direction: "asc" },
 }: {
   csrf?: string | null;
   enabled?: boolean;
   scope?: BrowserScope | null;
+  sort?: BrowserSortState;
 }) {
   const browser = useBrowserPagination({
     scope,
     path: "Screenshots",
     search: "",
+    sort,
     csrf,
     enabled,
   });
@@ -198,5 +201,46 @@ describe("useBrowserPagination", () => {
     });
 
     expect(screen.getByTestId("entries").textContent).toBe("");
+  });
+
+  it("refetches the first page and keeps load-more on the requested sort", async () => {
+    mockApi.getBrowser
+      .mockResolvedValueOnce(browserResponse([entry("first.png")], 2))
+      .mockResolvedValueOnce(browserResponse([entry("largest.png")], 3))
+      .mockResolvedValueOnce(browserResponse([entry("next-largest.png")], 3, 1));
+
+    const { rerender } = render(<Harness />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("entries").textContent).toBe("first.png");
+    });
+
+    rerender(<Harness sort={{ column: "size", direction: "desc" }} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("entries").textContent).toBe("largest.png");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("entries").textContent).toBe("largest.png,next-largest.png");
+    });
+
+    expect(mockApi.getBrowser).toHaveBeenNthCalledWith(
+      2,
+      "files",
+      "csrf-token",
+      undefined,
+      "Screenshots",
+      expect.objectContaining({ offset: 0, sort: { column: "size", direction: "desc" } }),
+    );
+    expect(mockApi.getBrowser).toHaveBeenNthCalledWith(
+      3,
+      "files",
+      "csrf-token",
+      undefined,
+      "Screenshots",
+      expect.objectContaining({ offset: 1, sort: { column: "size", direction: "desc" } }),
+    );
   });
 });

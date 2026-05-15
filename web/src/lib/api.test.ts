@@ -299,6 +299,34 @@ describe("authenticated GET helpers", () => {
       expect.objectContaining({ headers: { "X-CS-CSRF": "csrf-token" } }),
     );
   });
+
+  it("passes browser sort parameters when requested", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        scope: "files",
+        title: "Screenshots",
+        rootPath: "Screenshots",
+        path: "Screenshots",
+        breadcrumbs: [],
+        totalCount: 0,
+        offset: 0,
+        truncated: false,
+        entries: [],
+      }),
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getBrowser("files", "csrf-token", undefined, "Screenshots", {
+      sort: { column: "modified", direction: "desc" },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/browser?scope=files&path=Screenshots&sort=modified&direction=desc",
+      expect.objectContaining({ headers: { "X-CS-CSRF": "csrf-token" } }),
+    );
+  });
 });
 
 describe("uploadFiles", () => {

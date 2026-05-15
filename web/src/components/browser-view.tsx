@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import JSZip from "jszip";
 
 import { buildDownloadUrl, getBrowserAll } from "../lib/api";
+import { DEFAULT_BROWSER_SORT } from "../lib/browser-sort";
 import { BROWSER_MOVE_DRAG_TYPE } from "../lib/drag-types";
 import type {
   BrowserEntry,
   BrowserResponse,
   BrowserScope,
+  BrowserSortState,
   FileSearchResult,
   TransferState,
   UploadSelection,
@@ -283,6 +285,7 @@ export function BrowserView({
   response,
   scope,
   search = "",
+  sort = DEFAULT_BROWSER_SORT,
   tag,
   onBack,
   onCreateFolder,
@@ -293,6 +296,7 @@ export function BrowserView({
   onNavigate,
   onOpenSearchResult,
   onRunSearch,
+  onSortChange,
   onRefresh,
   onRename,
   onReplaceArt,
@@ -313,6 +317,7 @@ export function BrowserView({
   response: BrowserResponse;
   scope: BrowserScope;
   search?: string;
+  sort?: BrowserSortState;
   tag?: string;
   onBack: () => void;
   onCreateFolder: () => void;
@@ -323,6 +328,7 @@ export function BrowserView({
   onNavigate: (path?: string) => void;
   onOpenSearchResult?: (result: FileSearchResult) => void;
   onRunSearch?: () => void;
+  onSortChange?: (sort: BrowserSortState) => void;
   onRefresh: () => void;
   onRename: (entry: BrowserEntry) => void;
   onReplaceArt: (entry: BrowserEntry) => void;
@@ -640,6 +646,11 @@ export function BrowserView({
           selectedPaths={isFiles ? selectedPaths : undefined}
           someSelected={partiallySelected}
           scope={scope}
+          sort={sort}
+          onSortChange={(nextSort) => {
+            setSelectedPaths([]);
+            onSortChange?.(nextSort);
+          }}
           tag={tag}
         />
       )}

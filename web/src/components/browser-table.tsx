@@ -2,72 +2,46 @@ import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { buildDownloadUrl } from "../lib/api";
+import { DEFAULT_BROWSER_SORT, nextBrowserSort } from "../lib/browser-sort";
 import { BROWSER_MOVE_DRAG_TYPE } from "../lib/drag-types";
 import { isPlaintextFileName } from "../lib/plaintext";
-import type { BrowserEntry, BrowserScope } from "../lib/types";
+import type { BrowserEntry, BrowserScope, BrowserSortColumn, BrowserSortState } from "../lib/types";
 
 const DASH = "\u2014";
 
-type SortColumn = "name" | "size" | "modified";
-type SortDirection = "asc" | "desc";
-type SortState = { column: SortColumn; direction: SortDirection };
-
-function sortEntries(entries: BrowserEntry[], sort: SortState): BrowserEntry[] {
-  const multiplier = sort.direction === "asc" ? 1 : -1;
-
-  return [...entries].sort((a, b) => {
-    const aIsDir = a.type === "directory" ? 0 : 1;
-    const bIsDir = b.type === "directory" ? 0 : 1;
-    if (aIsDir !== bIsDir) return aIsDir - bIsDir;
-
-    let cmp: number;
-    switch (sort.column) {
-      case "size":
-        cmp = a.size - b.size;
-        break;
-      case "modified":
-        cmp = a.modified - b.modified;
-        break;
-      default:
-        cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-        break;
-    }
-
-    return cmp === 0 ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) * multiplier : cmp * multiplier;
-  });
-}
-
-function toggleSort(current: SortState, column: SortColumn): SortState {
-  if (current.column === column) {
-    return { column, direction: current.direction === "asc" ? "desc" : "asc" };
-  }
-  return { column, direction: "asc" };
-}
-
-function SortIndicator({ column, sort }: { column: SortColumn; sort: SortState }) {
+function SortIndicator({ column, sort }: { column: BrowserSortColumn; sort: BrowserSortState }) {
   if (sort.column !== column) {
     return null;
   }
   return <span aria-hidden="true">{sort.direction === "asc" ? "\u25b2" : "\u25bc"}</span>;
 }
 
+function sortAriaLabel(label: string, column: BrowserSortColumn, sort: BrowserSortState): string {
+  if (sort.column !== column) {
+    return `${label}, not sorted`;
+  }
+
+  return `${label}, sorted ${sort.direction === "asc" ? "ascending" : "descending"}`;
+}
+
 function SortableHeader({
   column,
   label,
   sort,
-  onSort,
+  onSortChange,
   className = "",
 }: {
-  column: SortColumn;
+  column: BrowserSortColumn;
   label: string;
-  sort: SortState;
-  onSort: (column: SortColumn) => void;
+  sort: BrowserSortState;
+  onSortChange: (sort: BrowserSortState) => void;
   className?: string;
 }) {
   return (
     <button
+      aria-label={sortAriaLabel(label, column, sort)}
       className={`flex items-center gap-1 uppercase tracking-wider transition hover:text-[var(--text)] ${className}`}
-      onClick={() => onSort(column)}
+      onClick={() => onSortChange(nextBrowserSort(sort, column))}
       type="button"
     >
       {label} <SortIndicator column={column} sort={sort} />
@@ -405,6 +379,8 @@ function FilesTable({
   onSelectEntry,
   selectedPaths = [],
   someSelected = false,
+  sort,
+  onSortChange,
   tag,
 }: {
   allSelected?: boolean;
@@ -421,16 +397,16 @@ function FilesTable({
   onSelectEntry?: (entry: BrowserEntry, checked: boolean) => void;
   selectedPaths?: string[];
   someSelected?: boolean;
+  sort: BrowserSortState;
+  onSortChange: (sort: BrowserSortState) => void;
   tag?: string;
 }) {
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
-  const [sort, setSort] = useState<SortState>({ column: "name", direction: "asc" });
   const dragPathsRef = useRef<string[] | null>(null);
   const gridClass =
     "grid grid-cols-[auto_minmax(0,1fr)] gap-3 md:grid-cols-[auto_minmax(0,1fr)_100px_220px_260px] md:gap-4";
   const selectedPathSet = new Set(selectedPaths);
   const selectedEntries = entries.filter((entry) => selectedPathSet.has(entry.path));
-  const sortedEntries = sortEntries(entries, sort);
 
   function clearDragState() {
     dragPathsRef.current = null;
@@ -471,9 +447,9 @@ function FilesTable({
             onChange={onSelectAll}
           />
         </span>
-        <SortableHeader column="name" label="Name" sort={sort} onSort={(c) => setSort(toggleSort(sort, c))} />
-        <SortableHeader column="size" label="Size" sort={sort} onSort={(c) => setSort(toggleSort(sort, c))} />
-        <SortableHeader column="modified" label="Modified" sort={sort} onSort={(c) => setSort(toggleSort(sort, c))} />
+        <SortableHeader column="name" label="Name" sort={sort} onSortChange={onSortChange} />
+        <SortableHeader column="size" label="Size" sort={sort} onSortChange={onSortChange} />
+        <SortableHeader column="modified" label="Modified" sort={sort} onSortChange={onSortChange} />
         <span className="text-right">Action</span>
       </div>
 
@@ -504,12 +480,12 @@ function FilesTable({
         </div>
       ) : null}
 
-      {sortedEntries.length === 0 && !onNavigateParent ? (
+      {entries.length === 0 && !onNavigateParent ? (
         <div className="px-5 py-10 text-center text-sm italic text-[var(--muted)]">
           No files found in this directory.
         </div>
       ) : (
-        sortedEntries.map((entry) => {
+        entries.map((entry) => {
           const isDir = entry.type === "directory";
           const isSelected = selectedPathSet.has(entry.path);
           const isDropTarget = dropTargetPath === entry.path;
@@ -680,6 +656,8 @@ function LibraryTable({
   onRename,
   onReplaceArt,
   scope,
+  sort,
+  onSortChange,
   tag,
 }: {
   busy: boolean;
@@ -690,30 +668,30 @@ function LibraryTable({
   onRename?: (entry: BrowserEntry) => void;
   onReplaceArt?: (entry: BrowserEntry) => void;
   scope: BrowserScope;
+  sort: BrowserSortState;
+  onSortChange: (sort: BrowserSortState) => void;
   tag?: string;
 }) {
-  const [sort, setSort] = useState<SortState>({ column: "name", direction: "asc" });
   const gridClass =
     "grid grid-cols-[minmax(0,1fr),auto] gap-3 md:grid-cols-[minmax(0,1fr)_110px_220px_140px] md:gap-4";
-  const sortedEntries = sortEntries(entries, sort);
 
   return (
     <div className="relative overflow-visible rounded-[24px] border border-[var(--border)] bg-[var(--panel)]">
       <div
         className={`hidden border-b border-[var(--line)] bg-white/[0.02] px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--muted)] md:grid ${gridClass}`}
       >
-        <SortableHeader column="name" label="Name" sort={sort} onSort={(c) => setSort(toggleSort(sort, c))} />
-        <SortableHeader column="size" label="Size" sort={sort} onSort={(c) => setSort(toggleSort(sort, c))} />
-        <SortableHeader column="modified" label="Modified" sort={sort} onSort={(c) => setSort(toggleSort(sort, c))} />
+        <SortableHeader column="name" label="Name" sort={sort} onSortChange={onSortChange} />
+        <SortableHeader column="size" label="Size" sort={sort} onSortChange={onSortChange} />
+        <SortableHeader column="modified" label="Modified" sort={sort} onSortChange={onSortChange} />
         <span className="text-right">Action</span>
       </div>
 
-      {sortedEntries.length === 0 ? (
+      {entries.length === 0 ? (
         <div className="px-5 py-10 text-center text-sm italic text-[var(--muted)]">
           Nothing found in this folder.
         </div>
       ) : (
-        sortedEntries.map((entry) => {
+        entries.map((entry) => {
           const isDir = entry.type === "directory";
           const canReplaceArt = scope === "roms" && entry.type === "rom";
 
@@ -796,6 +774,8 @@ export function BrowserTable({
   selectedPaths,
   someSelected = false,
   scope,
+  sort = DEFAULT_BROWSER_SORT,
+  onSortChange,
   tag,
 }: {
   allSelected?: boolean;
@@ -814,8 +794,12 @@ export function BrowserTable({
   selectedPaths?: string[];
   someSelected?: boolean;
   scope: BrowserScope;
+  sort?: BrowserSortState;
+  onSortChange?: (sort: BrowserSortState) => void;
   tag?: string;
 }) {
+  const handleSortChange = onSortChange ?? (() => {});
+
   if (scope === "files") {
     return (
       <FilesTable
@@ -833,6 +817,8 @@ export function BrowserTable({
         onSelectEntry={onSelectEntry}
         selectedPaths={selectedPaths}
         someSelected={someSelected}
+        sort={sort}
+        onSortChange={handleSortChange}
         tag={tag}
       />
     );
@@ -848,6 +834,8 @@ export function BrowserTable({
       onRename={onRename}
       onReplaceArt={onReplaceArt}
       scope={scope}
+      sort={sort}
+      onSortChange={handleSortChange}
       tag={tag}
     />
   );

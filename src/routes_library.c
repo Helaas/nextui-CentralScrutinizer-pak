@@ -61,6 +61,42 @@ static int cs_parse_offset(const char *value, size_t *offset_out) {
     return 0;
 }
 
+static int cs_parse_browser_sort_column(const char *value, cs_browser_sort_column *column_out) {
+    if (!value || !column_out) {
+        return -1;
+    }
+    if (value[0] == '\0' || strcmp(value, "name") == 0) {
+        *column_out = CS_BROWSER_SORT_NAME;
+        return 0;
+    }
+    if (strcmp(value, "size") == 0) {
+        *column_out = CS_BROWSER_SORT_SIZE;
+        return 0;
+    }
+    if (strcmp(value, "modified") == 0) {
+        *column_out = CS_BROWSER_SORT_MODIFIED;
+        return 0;
+    }
+
+    return -1;
+}
+
+static int cs_parse_browser_sort_direction(const char *value, cs_browser_sort_direction *direction_out) {
+    if (!value || !direction_out) {
+        return -1;
+    }
+    if (value[0] == '\0' || strcmp(value, "asc") == 0) {
+        *direction_out = CS_BROWSER_SORT_ASC;
+        return 0;
+    }
+    if (strcmp(value, "desc") == 0) {
+        *direction_out = CS_BROWSER_SORT_DESC;
+        return 0;
+    }
+
+    return -1;
+}
+
 static int cs_write_json(struct mg_connection *conn, int status, const char *reason, const char *body) {
     size_t body_len = body ? strlen(body) : 0;
 
@@ -540,7 +576,10 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
     char path_value[CS_PATH_MAX];
     char offset_value[32];
     char query_value[CS_BROWSER_QUERY_MAX];
+    char sort_value[32];
+    char direction_value[16];
     cs_browser_scope scope;
+    cs_browser_sort_options sort_options = {CS_BROWSER_SORT_NAME, CS_BROWSER_SORT_ASC};
     cs_platform_info resolved_platform = {0};
     const cs_platform_info *platform = NULL;
     cs_browser_result *result = NULL;
@@ -563,6 +602,8 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
     memset(path_value, 0, sizeof(path_value));
     memset(offset_value, 0, sizeof(offset_value));
     memset(query_value, 0, sizeof(query_value));
+    memset(sort_value, 0, sizeof(sort_value));
+    memset(direction_value, 0, sizeof(direction_value));
 
     if (!request || !request->query_string || request->query_string[0] == '\0') {
         return cs_write_json(conn, 400, "Bad Request", "{\"error\":\"missing_scope\"}");
@@ -588,9 +629,21 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
                       "q",
                       query_value,
                       sizeof(query_value));
+    (void) mg_get_var(request->query_string, strlen(request->query_string), "sort", sort_value, sizeof(sort_value));
+    (void) mg_get_var(request->query_string,
+                      strlen(request->query_string),
+                      "direction",
+                      direction_value,
+                      sizeof(direction_value));
 
     if (cs_parse_offset(offset_value, &offset) != 0) {
         return cs_write_json(conn, 400, "Bad Request", "{\"error\":\"invalid_offset\"}");
+    }
+    if (cs_parse_browser_sort_column(sort_value, &sort_options.column) != 0) {
+        return cs_write_json(conn, 400, "Bad Request", "{\"error\":\"invalid_sort\"}");
+    }
+    if (cs_parse_browser_sort_direction(direction_value, &sort_options.direction) != 0) {
+        return cs_write_json(conn, 400, "Bad Request", "{\"error\":\"invalid_sort_direction\"}");
     }
 
     if (cs_browser_scope_requires_platform(scope)) {
@@ -609,7 +662,14 @@ int cs_route_browser_handler(struct mg_connection *conn, void *cbdata) {
         return cs_write_json(conn, 500, "Internal Server Error", "{\"error\":\"alloc_failed\"}");
     }
 
-    browser_status = cs_browser_list(&app->paths, scope, platform, path_value, offset, query_value, result);
+    browser_status = cs_browser_list_with_sort(&app->paths,
+                                               scope,
+                                               platform,
+                                               path_value,
+                                               offset,
+                                               query_value,
+                                               &sort_options,
+                                               result);
     if (browser_status != CS_BROWSER_LIST_OK) {
         free(result);
         if (browser_status == CS_BROWSER_LIST_NOT_FOUND) {
