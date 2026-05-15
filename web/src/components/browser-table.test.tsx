@@ -44,9 +44,9 @@ describe("BrowserTable", () => {
       />,
     );
 
-    expect(screen.getByText("Name")).toBeTruthy();
-    expect(screen.getByText("Size")).toBeTruthy();
-    expect(screen.getByText("Modified")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Name/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Size/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Modified/ })).toBeTruthy();
     expect(screen.getByText("Action")).toBeTruthy();
     expect(screen.queryByText("Type")).toBeNull();
     expect(screen.queryByText("Select")).toBeNull();
@@ -363,9 +363,9 @@ describe("BrowserTable", () => {
       />,
     );
 
-    expect(screen.getByText("Name")).toBeTruthy();
-    expect(screen.getByText("Size")).toBeTruthy();
-    expect(screen.getByText("Modified")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Name/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Size/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Modified/ })).toBeTruthy();
     expect(screen.getByText("Action")).toBeTruthy();
     expect(screen.queryByText("Type")).toBeNull();
     expect(screen.queryByText("Select")).toBeNull();
@@ -407,6 +407,100 @@ describe("BrowserTable", () => {
     expect(screen.getByRole("menuitem", { name: "Replace Art" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Delete" })).toBeTruthy();
     expect(screen.getByRole("menu").closest("div.overflow-visible")).toBeTruthy();
+  });
+
+  it("sorts files entries by column when headers are clicked, keeping directories first", () => {
+    const dirEntry = {
+      name: "Saves",
+      path: "Saves",
+      type: "directory" as const,
+      size: 0,
+      modified: 1_700_000_300,
+      status: "",
+      thumbnailPath: "",
+    };
+    const smallFile = {
+      name: "alpha.txt",
+      path: "alpha.txt",
+      type: "file" as const,
+      size: 10,
+      modified: 1_700_000_200,
+      status: "",
+      thumbnailPath: "",
+    };
+    const bigFile = {
+      name: "beta.bin",
+      path: "beta.bin",
+      type: "file" as const,
+      size: 9999,
+      modified: 1_700_000_100,
+      status: "",
+      thumbnailPath: "",
+    };
+
+    render(
+      <BrowserTable
+        entries={[bigFile, dirEntry, smallFile]}
+        onNavigate={vi.fn()}
+        scope="files"
+      />,
+    );
+
+    const rows = () => screen.getAllByRole("checkbox").slice(1).map((cb) => cb.getAttribute("aria-label")?.replace("Select ", ""));
+
+    expect(rows()).toEqual(["Saves", "alpha.txt", "beta.bin"]);
+
+    fireEvent.click(screen.getByRole("button", { name: /Size/ }));
+    expect(rows()).toEqual(["Saves", "alpha.txt", "beta.bin"]);
+
+    fireEvent.click(screen.getByRole("button", { name: /Size/ }));
+    expect(rows()).toEqual(["Saves", "beta.bin", "alpha.txt"]);
+
+    fireEvent.click(screen.getByRole("button", { name: /Name/ }));
+    expect(rows()).toEqual(["Saves", "alpha.txt", "beta.bin"]);
+
+    fireEvent.click(screen.getByRole("button", { name: /Name/ }));
+    expect(rows()).toEqual(["Saves", "beta.bin", "alpha.txt"]);
+  });
+
+  it("sorts library entries by column when headers are clicked", () => {
+    const romA = {
+      name: "Alpha Game.gba",
+      path: "Roms/Alpha Game.gba",
+      type: "rom" as const,
+      size: 2048,
+      modified: 1_700_000_200,
+      status: "",
+      thumbnailPath: "",
+    };
+    const romB = {
+      name: "Beta Game.gba",
+      path: "Roms/Beta Game.gba",
+      type: "rom" as const,
+      size: 512,
+      modified: 1_700_000_100,
+      status: "",
+      thumbnailPath: "",
+    };
+
+    render(
+      <BrowserTable
+        entries={[romB, romA]}
+        onNavigate={vi.fn()}
+        scope="roms"
+        tag="GBA"
+      />,
+    );
+
+    const names = () => screen.getAllByText(/Game\.gba/).map((el) => el.textContent);
+
+    expect(names()).toEqual(["Alpha Game.gba", "Beta Game.gba"]);
+
+    fireEvent.click(screen.getByRole("button", { name: /Size/ }));
+    expect(names()).toEqual(["Beta Game.gba", "Alpha Game.gba"]);
+
+    fireEvent.click(screen.getByRole("button", { name: /Size/ }));
+    expect(names()).toEqual(["Alpha Game.gba", "Beta Game.gba"]);
   });
 
   it("omits Replace Art for non-ROM library scopes", () => {

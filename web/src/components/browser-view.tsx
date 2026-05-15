@@ -596,6 +596,7 @@ export function BrowserView({
         </section>
       ) : (
         <BrowserTable
+          key={response.path}
           allSelected={allSelected}
           busy={busy}
           csrf={csrf}
