@@ -1,6 +1,7 @@
 import type {
   BrowserResponse,
   BrowserScope,
+  BrowserSortState,
   FileSearchResponse,
   LogsResponse,
   MacDotfilesResponse,
@@ -211,7 +212,12 @@ export async function getPlatforms(csrf: string): Promise<PlatformsResponse> {
   return expectJson<PlatformsResponse>(response, "Platforms lookup failed");
 }
 
-export type BrowserRequestOptions = { offset?: number; query?: string; signal?: AbortSignal };
+export type BrowserRequestOptions = {
+  offset?: number;
+  query?: string;
+  sort?: BrowserSortState;
+  signal?: AbortSignal;
+};
 
 export async function getBrowser(
   scope: BrowserScope,
@@ -222,7 +228,9 @@ export async function getBrowser(
 ): Promise<BrowserResponse> {
   const offset = options?.offset && options.offset > 0 ? String(options.offset) : undefined;
   const q = options?.query?.trim() ? options.query.trim() : undefined;
-  const response = await fetch(`/api/browser${toQuery({ scope, tag, path, offset, q })}`, {
+  const sort = options?.sort?.column;
+  const direction = options?.sort?.direction;
+  const response = await fetch(`/api/browser${toQuery({ scope, tag, path, offset, q, sort, direction })}`, {
     headers: csrfHeaders(csrf),
     signal: options?.signal,
   });
@@ -239,6 +247,7 @@ export async function getBrowserAll(
 ): Promise<BrowserResponse> {
   const firstPage = await getBrowser(scope, csrf, tag, path, {
     query: options?.query,
+    sort: options?.sort,
     signal: options?.signal,
   });
   const entries = [...firstPage.entries];
@@ -248,6 +257,7 @@ export async function getBrowserAll(
     const nextPage = await getBrowser(scope, csrf, tag, path, {
       offset: entries.length,
       query: options?.query,
+      sort: options?.sort,
       signal: options?.signal,
     });
 

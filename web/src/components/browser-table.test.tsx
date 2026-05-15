@@ -47,6 +47,7 @@ describe("BrowserTable", () => {
     expect(screen.getByText("Name")).toBeTruthy();
     expect(screen.getByText("Size")).toBeTruthy();
     expect(screen.getByText("Modified")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Name/ })).toBeNull();
     expect(screen.getByText("Action")).toBeTruthy();
     expect(screen.queryByText("Type")).toBeNull();
     expect(screen.queryByText("Select")).toBeNull();
@@ -366,6 +367,7 @@ describe("BrowserTable", () => {
     expect(screen.getByText("Name")).toBeTruthy();
     expect(screen.getByText("Size")).toBeTruthy();
     expect(screen.getByText("Modified")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Name/ })).toBeNull();
     expect(screen.getByText("Action")).toBeTruthy();
     expect(screen.queryByText("Type")).toBeNull();
     expect(screen.queryByText("Select")).toBeNull();
@@ -407,6 +409,92 @@ describe("BrowserTable", () => {
     expect(screen.getByRole("menuitem", { name: "Replace Art" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Delete" })).toBeTruthy();
     expect(screen.getByRole("menu").closest("div.overflow-visible")).toBeTruthy();
+  });
+
+  it("reports controlled files sort changes and exposes the active direction", () => {
+    const onSortChange = vi.fn();
+    const firstEntry = {
+      name: "alpha.txt",
+      path: "alpha.txt",
+      type: "file" as const,
+      size: 10,
+      modified: 1_700_000_200,
+      status: "",
+      thumbnailPath: "",
+    };
+    const secondEntry = {
+      name: "beta.bin",
+      path: "beta.bin",
+      type: "file" as const,
+      size: 9999,
+      modified: 1_700_000_100,
+      status: "",
+      thumbnailPath: "",
+    };
+
+    render(
+      <BrowserTable
+        entries={[firstEntry, secondEntry]}
+        onNavigate={vi.fn()}
+        onSortChange={onSortChange}
+        scope="files"
+        sort={{ column: "name", direction: "asc" }}
+      />,
+    );
+
+    const rows = () => screen.getAllByRole("checkbox").slice(1).map((cb) => cb.getAttribute("aria-label")?.replace("Select ", ""));
+
+    expect(screen.getByRole("button", { name: "Name, sorted ascending" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Size, not sorted" })).toBeTruthy();
+    expect(rows()).toEqual(["alpha.txt", "beta.bin"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Size, not sorted" }));
+    expect(onSortChange).toHaveBeenCalledWith({ column: "size", direction: "asc" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Name, sorted ascending" }));
+    expect(onSortChange).toHaveBeenCalledWith({ column: "name", direction: "desc" });
+    expect(rows()).toEqual(["alpha.txt", "beta.bin"]);
+  });
+
+  it("reports controlled library sort changes", () => {
+    const onSortChange = vi.fn();
+    const romA = {
+      name: "Alpha Game.gba",
+      path: "Roms/Alpha Game.gba",
+      type: "rom" as const,
+      size: 2048,
+      modified: 1_700_000_200,
+      status: "",
+      thumbnailPath: "",
+    };
+    const romB = {
+      name: "Beta Game.gba",
+      path: "Roms/Beta Game.gba",
+      type: "rom" as const,
+      size: 512,
+      modified: 1_700_000_100,
+      status: "",
+      thumbnailPath: "",
+    };
+
+    render(
+      <BrowserTable
+        entries={[romA, romB]}
+        onNavigate={vi.fn()}
+        onSortChange={onSortChange}
+        scope="roms"
+        sort={{ column: "size", direction: "asc" }}
+        tag="GBA"
+      />,
+    );
+
+    const names = () => screen.getAllByText(/Game\.gba/).map((el) => el.textContent);
+
+    expect(names()).toEqual(["Alpha Game.gba", "Beta Game.gba"]);
+    expect(screen.getByRole("button", { name: "Size, sorted ascending" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Size, sorted ascending" }));
+    expect(onSortChange).toHaveBeenCalledWith({ column: "size", direction: "desc" });
   });
 
   it("omits Replace Art for non-ROM library scopes", () => {

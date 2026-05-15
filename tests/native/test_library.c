@@ -4,7 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
+#include <utime.h>
 
 #include "cs_library.h"
 #include "cs_paths.h"
@@ -20,6 +22,14 @@ static void write_file(const char *path, const char *content) {
     assert(file != NULL);
     assert(fwrite(content, 1, strlen(content), file) == strlen(content));
     assert(fclose(file) == 0);
+}
+
+static void write_sized_file(const char *path, size_t size) {
+    FILE *file = fopen(path, "wb");
+
+    assert(file != NULL);
+    assert(fclose(file) == 0);
+    assert(truncate(path, (off_t) size) == 0);
 }
 
 static void set_sdcard_root_realpath(const char *root) {
@@ -431,6 +441,80 @@ static void test_pagination_window_and_total_count(void) {
     assert(rmdir(root) == 0);
 }
 
+static void test_sorted_pagination_window_uses_requested_order(void) {
+    cs_paths paths = {0};
+    cs_browser_result result = {0};
+    cs_browser_sort_options sort = {CS_BROWSER_SORT_SIZE, CS_BROWSER_SORT_DESC};
+    char template[] = "/tmp/cs-library-sort-page-XXXXXX";
+    char *root;
+    char roms_dir[PATH_MAX];
+    char system_dir[PATH_MAX];
+    char expected_name[64];
+    const size_t total_files = CS_BROWSER_PAGE_SIZE + 3;
+    size_t i;
+    const cs_platform_info *gba = cs_platform_find("GBA");
+
+    assert(gba != NULL);
+    root = mkdtemp(template);
+    assert(root != NULL);
+
+    assert(snprintf(roms_dir, sizeof(roms_dir), "%s/Roms", root) > 0);
+    assert(snprintf(system_dir, sizeof(system_dir), "%s/Roms/Game Boy Advance (GBA)", root) > 0);
+    make_dir(roms_dir);
+    make_dir(system_dir);
+
+    for (i = 0; i < total_files; ++i) {
+        char file_path[PATH_MAX];
+        struct utimbuf times;
+
+        assert(snprintf(file_path, sizeof(file_path), "%s/Game %03zu.gba", system_dir, i) > 0);
+        write_sized_file(file_path, i + 1u);
+        times.actime = 1700000000 + (long) i;
+        times.modtime = 1700000000 + (long) (total_files - i);
+        assert(utime(file_path, &times) == 0);
+    }
+
+    set_sdcard_root_realpath(root);
+    assert(cs_paths_init(&paths) == 0);
+
+    assert(cs_browser_list_with_sort(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &sort, &result) == CS_BROWSER_LIST_OK);
+    assert(result.count == CS_BROWSER_PAGE_SIZE);
+    assert(result.total_count == total_files);
+    assert(result.offset == 0);
+    assert(snprintf(expected_name, sizeof(expected_name), "Game %03zu.gba", total_files - 1u) > 0);
+    assert(strcmp(result.entries[0].name, expected_name) == 0);
+    assert(strcmp(result.entries[CS_BROWSER_PAGE_SIZE - 1].name, "Game 003.gba") == 0);
+
+    assert(cs_browser_list_with_sort(&paths, CS_SCOPE_ROMS, gba, "", CS_BROWSER_PAGE_SIZE, NULL, &sort, &result)
+           == CS_BROWSER_LIST_OK);
+    assert(result.count == 3);
+    assert(result.total_count == total_files);
+    assert(result.offset == CS_BROWSER_PAGE_SIZE);
+    assert(strcmp(result.entries[0].name, "Game 002.gba") == 0);
+    assert(strcmp(result.entries[1].name, "Game 001.gba") == 0);
+    assert(strcmp(result.entries[2].name, "Game 000.gba") == 0);
+
+    sort.column = CS_BROWSER_SORT_MODIFIED;
+    sort.direction = CS_BROWSER_SORT_ASC;
+    assert(cs_browser_list_with_sort(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &sort, &result) == CS_BROWSER_LIST_OK);
+    assert(snprintf(expected_name, sizeof(expected_name), "Game %03zu.gba", total_files - 1u) > 0);
+    assert(strcmp(result.entries[0].name, expected_name) == 0);
+
+    sort.direction = CS_BROWSER_SORT_DESC;
+    assert(cs_browser_list_with_sort(&paths, CS_SCOPE_ROMS, gba, "", 0, NULL, &sort, &result) == CS_BROWSER_LIST_OK);
+    assert(strcmp(result.entries[0].name, "Game 000.gba") == 0);
+
+    for (i = 0; i < total_files; ++i) {
+        char file_path[PATH_MAX];
+
+        assert(snprintf(file_path, sizeof(file_path), "%s/Game %03zu.gba", system_dir, i) > 0);
+        assert(unlink(file_path) == 0);
+    }
+    assert(rmdir(system_dir) == 0);
+    assert(rmdir(roms_dir) == 0);
+    assert(rmdir(root) == 0);
+}
+
 static void test_query_filters_results_case_insensitively(void) {
     cs_paths paths = {0};
     cs_browser_result result = {0};
@@ -566,6 +650,7 @@ int main(void) {
     test_symlinked_absolute_sdcard_root_is_canonicalized_for_files_scope();
     test_symlinked_roms_parent_is_rejected();
     test_pagination_window_and_total_count();
+    test_sorted_pagination_window_uses_requested_order();
     test_query_filters_results_case_insensitively();
     test_ports_browser_supports_hidden_ports_and_rejects_other_resources();
     return 0;

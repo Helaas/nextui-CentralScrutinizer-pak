@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getBrowser } from "./api";
-import type { BrowserEntry, BrowserResponse, BrowserScope } from "./types";
+import { DEFAULT_BROWSER_SORT } from "./browser-sort";
+import type { BrowserEntry, BrowserResponse, BrowserScope, BrowserSortState } from "./types";
 
 export const BROWSER_PAGE_SIZE = 512;
 export const BROWSER_SEARCH_DEBOUNCE_MS = 300;
@@ -13,6 +14,7 @@ export type BrowserPaginationParams = {
   tag?: string;
   path?: string;
   search: string;
+  sort?: BrowserSortState;
   csrf?: string | null;
   enabled: boolean;
 };
@@ -29,7 +31,9 @@ export type BrowserPaginationResult = {
 };
 
 export function useBrowserPagination(params: BrowserPaginationParams): BrowserPaginationResult {
-  const { scope, tag, path, search, csrf, enabled } = params;
+  const { scope, tag, path, search, sort = DEFAULT_BROWSER_SORT, csrf, enabled } = params;
+  const sortColumn = sort.column;
+  const sortDirection = sort.direction;
   const [metadata, setMetadata] = useState<BrowserMetadata | null>(null);
   const [entries, setEntries] = useState<BrowserEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -68,12 +72,13 @@ export function useBrowserPagination(params: BrowserPaginationParams): BrowserPa
       const response = await getBrowser(scope, csrf, tag, path, {
         offset,
         query: debouncedSearch,
+        sort: { column: sortColumn, direction: sortDirection },
         signal,
       });
 
       return response;
     },
-    [enabled, scope, csrf, tag, path, debouncedSearch],
+    [enabled, scope, csrf, tag, path, debouncedSearch, sortColumn, sortDirection],
   );
 
   useEffect(() => {

@@ -18,7 +18,14 @@ typedef struct cs_browser_sort_entry {
     int is_dir;
     unsigned long long size;
     long long modified;
+    cs_browser_sort_column sort_column;
+    cs_browser_sort_direction sort_direction;
 } cs_browser_sort_entry;
+
+static const cs_browser_sort_options CS_BROWSER_DEFAULT_SORT_OPTIONS = {
+    CS_BROWSER_SORT_NAME,
+    CS_BROWSER_SORT_ASC,
+};
 
 static int cs_browser_name_matches_query(const char *name, const char *query) {
     size_t name_len;
@@ -327,14 +334,53 @@ static int cs_browser_write_thumbnail(const char *root,
     return 0;
 }
 
+/* qsort has no context pointer, so the active sort column/direction are duplicated onto every
+ * entry by the caller. Every entry in a given sort carries identical values, so reading them
+ * off `a` is safe. */
 static int cs_browser_sort_compare(const void *left, const void *right) {
     const cs_browser_sort_entry *a = (const cs_browser_sort_entry *) left;
     const cs_browser_sort_entry *b = (const cs_browser_sort_entry *) right;
+    cs_browser_sort_direction direction = a->sort_direction;
+    int cmp = 0;
 
     if (a->is_dir != b->is_dir) {
         return a->is_dir ? -1 : 1;
     }
+
+    switch (a->sort_column) {
+        case CS_BROWSER_SORT_SIZE:
+            cmp = (a->size > b->size) - (a->size < b->size);
+            break;
+        case CS_BROWSER_SORT_MODIFIED:
+            cmp = (a->modified > b->modified) - (a->modified < b->modified);
+            break;
+        case CS_BROWSER_SORT_NAME:
+        default:
+            cmp = strcmp(a->name, b->name);
+            break;
+    }
+
+    if (direction == CS_BROWSER_SORT_DESC) {
+        cmp = -cmp;
+    }
+    if (cmp != 0) {
+        return cmp;
+    }
+
     return strcmp(a->name, b->name);
+}
+
+static cs_browser_sort_options cs_browser_normalize_sort_options(const cs_browser_sort_options *sort_options) {
+    cs_browser_sort_options normalized = sort_options ? *sort_options : CS_BROWSER_DEFAULT_SORT_OPTIONS;
+
+    if (normalized.column != CS_BROWSER_SORT_NAME && normalized.column != CS_BROWSER_SORT_SIZE
+        && normalized.column != CS_BROWSER_SORT_MODIFIED) {
+        normalized.column = CS_BROWSER_SORT_NAME;
+    }
+    if (normalized.direction != CS_BROWSER_SORT_ASC && normalized.direction != CS_BROWSER_SORT_DESC) {
+        normalized.direction = CS_BROWSER_SORT_ASC;
+    }
+    return normalized;
 }
 
 static cs_browser_list_status cs_browser_path_failure_status(int error_code) {
@@ -519,9 +565,21 @@ cs_browser_list_status cs_browser_list(const cs_paths *paths,
                                        size_t offset,
                                        const char *query,
                                        cs_browser_result *result) {
+    return cs_browser_list_with_sort(paths, scope, platform, relative_path, offset, query, NULL, result);
+}
+
+cs_browser_list_status cs_browser_list_with_sort(const cs_paths *paths,
+                                                 cs_browser_scope scope,
+                                                 const cs_platform_info *platform,
+                                                 const char *relative_path,
+                                                 size_t offset,
+                                                 const char *query,
+                                                 const cs_browser_sort_options *sort_options,
+                                                 cs_browser_result *result) {
     char root[CS_PATH_MAX];
     char target_path[CS_PATH_MAX];
     char guard_root[CS_PATH_MAX];
+    cs_browser_sort_options normalized_sort = cs_browser_normalize_sort_options(sort_options);
     unsigned int path_flags = CS_PATH_FLAG_ALLOW_EMPTY;
     int root_fd = -1;
     int dir_fd = -1;
@@ -652,6 +710,8 @@ cs_browser_list_status cs_browser_list(const cs_paths *paths,
         sort_entry->is_dir = S_ISDIR(st.st_mode) ? 1 : 0;
         sort_entry->size = S_ISREG(st.st_mode) ? (unsigned long long) st.st_size : 0;
         sort_entry->modified = (long long) st.st_mtime;
+        sort_entry->sort_column = normalized_sort.column;
+        sort_entry->sort_direction = normalized_sort.direction;
         sort_count += 1;
     }
 

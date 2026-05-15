@@ -2,11 +2,56 @@ import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { buildDownloadUrl } from "../lib/api";
+import { DEFAULT_BROWSER_SORT, nextBrowserSort } from "../lib/browser-sort";
 import { BROWSER_MOVE_DRAG_TYPE } from "../lib/drag-types";
 import { isPlaintextFileName } from "../lib/plaintext";
-import type { BrowserEntry, BrowserScope } from "../lib/types";
+import type { BrowserEntry, BrowserScope, BrowserSortColumn, BrowserSortState } from "../lib/types";
 
 const DASH = "\u2014";
+
+function SortIndicator({ column, sort }: { column: BrowserSortColumn; sort: BrowserSortState }) {
+  if (sort.column !== column) {
+    return null;
+  }
+  return <span aria-hidden="true">{sort.direction === "asc" ? "\u25b2" : "\u25bc"}</span>;
+}
+
+function sortAriaLabel(label: string, column: BrowserSortColumn, sort: BrowserSortState): string {
+  if (sort.column !== column) {
+    return `${label}, not sorted`;
+  }
+
+  return `${label}, sorted ${sort.direction === "asc" ? "ascending" : "descending"}`;
+}
+
+function SortableHeader({
+  column,
+  label,
+  sort,
+  onSortChange,
+  className = "",
+}: {
+  column: BrowserSortColumn;
+  label: string;
+  sort: BrowserSortState;
+  onSortChange?: (sort: BrowserSortState) => void;
+  className?: string;
+}) {
+  if (!onSortChange) {
+    return <span className={`flex items-center gap-1 uppercase tracking-wider ${className}`}>{label}</span>;
+  }
+
+  return (
+    <button
+      aria-label={sortAriaLabel(label, column, sort)}
+      className={`flex items-center gap-1 uppercase tracking-wider transition hover:text-[var(--text)] ${className}`}
+      onClick={() => onSortChange(nextBrowserSort(sort, column))}
+      type="button"
+    >
+      {label} <SortIndicator column={column} sort={sort} />
+    </button>
+  );
+}
 
 function formatSize(size: number): string {
   if (!size) {
@@ -338,6 +383,8 @@ function FilesTable({
   onSelectEntry,
   selectedPaths = [],
   someSelected = false,
+  sort,
+  onSortChange,
   tag,
 }: {
   allSelected?: boolean;
@@ -354,6 +401,8 @@ function FilesTable({
   onSelectEntry?: (entry: BrowserEntry, checked: boolean) => void;
   selectedPaths?: string[];
   someSelected?: boolean;
+  sort: BrowserSortState;
+  onSortChange?: (sort: BrowserSortState) => void;
   tag?: string;
 }) {
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
@@ -402,11 +451,9 @@ function FilesTable({
             onChange={onSelectAll}
           />
         </span>
-        <span className="flex items-center gap-1">
-          Name <span aria-hidden="true">▲</span>
-        </span>
-        <span>Size</span>
-        <span>Modified</span>
+        <SortableHeader column="name" label="Name" sort={sort} onSortChange={onSortChange} />
+        <SortableHeader column="size" label="Size" sort={sort} onSortChange={onSortChange} />
+        <SortableHeader column="modified" label="Modified" sort={sort} onSortChange={onSortChange} />
         <span className="text-right">Action</span>
       </div>
 
@@ -613,6 +660,8 @@ function LibraryTable({
   onRename,
   onReplaceArt,
   scope,
+  sort,
+  onSortChange,
   tag,
 }: {
   busy: boolean;
@@ -623,6 +672,8 @@ function LibraryTable({
   onRename?: (entry: BrowserEntry) => void;
   onReplaceArt?: (entry: BrowserEntry) => void;
   scope: BrowserScope;
+  sort: BrowserSortState;
+  onSortChange?: (sort: BrowserSortState) => void;
   tag?: string;
 }) {
   const gridClass =
@@ -633,9 +684,9 @@ function LibraryTable({
       <div
         className={`hidden border-b border-[var(--line)] bg-white/[0.02] px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--muted)] md:grid ${gridClass}`}
       >
-        <span>Name</span>
-        <span>Size</span>
-        <span>Modified</span>
+        <SortableHeader column="name" label="Name" sort={sort} onSortChange={onSortChange} />
+        <SortableHeader column="size" label="Size" sort={sort} onSortChange={onSortChange} />
+        <SortableHeader column="modified" label="Modified" sort={sort} onSortChange={onSortChange} />
         <span className="text-right">Action</span>
       </div>
 
@@ -727,6 +778,8 @@ export function BrowserTable({
   selectedPaths,
   someSelected = false,
   scope,
+  sort = DEFAULT_BROWSER_SORT,
+  onSortChange,
   tag,
 }: {
   allSelected?: boolean;
@@ -745,6 +798,8 @@ export function BrowserTable({
   selectedPaths?: string[];
   someSelected?: boolean;
   scope: BrowserScope;
+  sort?: BrowserSortState;
+  onSortChange?: (sort: BrowserSortState) => void;
   tag?: string;
 }) {
   if (scope === "files") {
@@ -764,6 +819,8 @@ export function BrowserTable({
         onSelectEntry={onSelectEntry}
         selectedPaths={selectedPaths}
         someSelected={someSelected}
+        sort={sort}
+        onSortChange={onSortChange}
         tag={tag}
       />
     );
@@ -779,6 +836,8 @@ export function BrowserTable({
       onRename={onRename}
       onReplaceArt={onReplaceArt}
       scope={scope}
+      sort={sort}
+      onSortChange={onSortChange}
       tag={tag}
     />
   );

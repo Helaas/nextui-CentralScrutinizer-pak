@@ -34,6 +34,7 @@ import {
   searchFiles,
   writeTextFile,
 } from "../lib/api";
+import { DEFAULT_BROWSER_SORT } from "../lib/browser-sort";
 import { getBrowserId } from "../lib/browser-id";
 import { parseZipFile, uploadPathsFromZip, uploadSelectionFromZip, type ParsedZipPreview } from "../lib/zip-upload";
 import { useBrowserPagination } from "../lib/use-browser-pagination";
@@ -57,6 +58,7 @@ import { PLAINTEXT_MAX_BYTES } from "../lib/plaintext";
 import type {
   BrowserEntry,
   BrowserScope,
+  BrowserSortState,
   ExtractStrategy,
   FileSearchResult,
   LibraryEmuFilter,
@@ -247,6 +249,10 @@ export default function Page() {
     browser: "",
     "file-browser": "",
   });
+  const [browserSortState, setBrowserSortState] = useState<{ key: string | null; sort: BrowserSortState }>({
+    key: null,
+    sort: DEFAULT_BROWSER_SORT,
+  });
   const [editor, setEditor] = useState<{
     entry: BrowserEntry;
     content: string;
@@ -357,15 +363,24 @@ export default function Page() {
 
   const browserSearchKey: ShellSearchKey = isFileBrowserTool(viewState) ? "file-browser" : "browser";
   const browserSearchValue = searchByContext[browserSearchKey];
+  const browserContextKey = browserContext
+    ? `${browserContext.scope}\u0000${browserContext.tag ?? ""}\u0000${browserContext.path ?? ""}`
+    : null;
+  const browserSort = browserSortState.key === browserContextKey ? browserSortState.sort : DEFAULT_BROWSER_SORT;
 
   const browser = useBrowserPagination({
     scope: browserContext?.scope ?? null,
     tag: browserContext?.tag,
     path: browserContext?.path,
     search: browserSearchValue,
+    sort: browserSort,
     csrf: session?.csrf,
     enabled: browserContext !== null,
   });
+
+  function updateBrowserSort(sort: BrowserSortState) {
+    setBrowserSortState({ key: browserContextKey, sort });
+  }
 
   const browserRefreshRef = useRef(browser.refresh);
   browserRefreshRef.current = browser.refresh;
@@ -1436,6 +1451,7 @@ export default function Page() {
         isLoadingMore={browser.isLoadingMore}
         notice={notice}
         onLoadMore={browser.loadMore}
+        sort={browserSort}
         onBack={() => {
           if (isFileBrowserTool(viewState)) {
             navigate({ view: "tools", destination: "tools" });
@@ -1504,6 +1520,7 @@ export default function Page() {
         onRunSearch={() => {
           void handleRunFileSearch();
         }}
+        onSortChange={updateBrowserSort}
         onUploadFolder={() => {
           void handleUploadFolder();
         }}
