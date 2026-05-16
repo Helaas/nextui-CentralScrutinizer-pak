@@ -20,8 +20,11 @@ ROM_BASE="${ROM_NAME%.*}"
 mkdir -p "$SDCARD_ROOT/Roms/Game Boy Advance (GBA)/.media"
 mkdir -p "$SDCARD_ROOT/Emus/tg5040"
 mkdir -p "$SDCARD_ROOT/Roms/Dreamcast (FLYCAST)"
+mkdir -p "$SDCARD_ROOT/Roms/Awesome System (FOO)"
 printf 'png' > "$SDCARD_ROOT/Roms/Game Boy Advance (GBA)/.media/$ROM_BASE.png"
+printf 'rom' > "$SDCARD_ROOT/Roms/Awesome System (FOO)/sample.rom"
 printf 'pak' > "$SDCARD_ROOT/Emus/tg5040/GBA.pak"
+printf 'pak' > "$SDCARD_ROOT/Emus/tg5040/FOO.pak"
 
 CS_PAIRING_CODE=7391 ./build/mac/central-scrutinizer --headless --port 8877 --web-root web/out --sdcard "$SDCARD_ROOT" &
 SERVER_PID=$!
@@ -62,20 +65,29 @@ SESSION_RESPONSE="$(curl -sS -b "$COOKIE_JAR" http://127.0.0.1:8877/api/session)
 CSRF_TOKEN="$(printf '%s' "$SESSION_RESPONSE" | sed -n 's/.*"csrf":"\([^"]*\)".*/\1/p')"
 [ -n "$CSRF_TOKEN" ]
 
-curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms | grep -Fq '"tag":"GBA"'
-curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms | grep -Fq '"name":"Game Boy Advance"'
-curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms | grep -Fq '"group":"Nintendo"'
-curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms | grep -Fq '"counts":{"roms":1,"saves":1,"states":5,"bios":1,"overlays":0,"cheats":0}'
+# NDJSON streams chunk-by-chunk, so capture the full response once and grep against the variable
+# instead of piping curl into grep — grep would short-circuit on first match and break the pipe.
 PLATFORMS_RESPONSE="$(curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" http://127.0.0.1:8877/api/platforms)"
+printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"tag":"GBA"'
+printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"name":"Game Boy Advance"'
+printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"group":"Nintendo"'
+printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"counts":{"roms":1,"saves":1,"states":5,"bios":1,"overlays":0,"cheats":0}'
+printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"type":"platform"'
+printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '{"type":"done"}'
 printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"tag":"PORTS"'
 printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"requiresEmulator":true'
 printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"emulatorInstalled":true'
 printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"tag":"PORTS","name":"Ports","group":"PortMaster","icon":"PORTMASTER","isCustom":false,"requiresEmulator":false'
+# User-added emulator: FOO.pak is installed, so Roms/Awesome System (FOO) should surface as a custom platform.
+printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"type":"platform","group":"Custom","platform":{"tag":"FOO"'
+printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"tag":"FOO","name":"Awesome System","group":"Custom","icon":"FOO","isCustom":true'
+# FLYCAST has no matching emulator pak, so it must stay hidden.
 if printf '%s' "$PLATFORMS_RESPONSE" | grep -Fq '"tag":"FLYCAST"'; then
     echo "custom platform unexpectedly exposed in library response" >&2
     exit 1
 fi
 
+curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=roms&tag=FOO' | grep -Fq '"name":"sample.rom"'
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=roms&tag=GBA' | grep -Fq "\"name\":\"$ROM_NAME\""
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=roms&tag=GBA' | grep -Fq "\"thumbnailPath\":\".media/$ROM_BASE.png\""
 curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/browser?scope=saves&tag=GBA' | grep -Fq '"name":"Pokemon Emerald.sav"'

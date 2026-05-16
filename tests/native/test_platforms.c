@@ -282,6 +282,77 @@ static void test_custom_rom_directories_are_not_exposed_in_library(void) {
     assert(rmdir(root) == 0);
 }
 
+static void test_custom_rom_directories_are_exposed_when_emulator_installed(void) {
+    char template[] = "/tmp/cs-platforms-custom-emu-XXXXXX";
+    char *root;
+    char roms_dir[PATH_MAX];
+    char foo_dir[PATH_MAX];
+    char foo_file[PATH_MAX];
+    char emus_root[PATH_MAX];
+    char emus_platform_dir[PATH_MAX];
+    char foo_pak[PATH_MAX];
+    cs_paths paths = {0};
+    cs_platform_info discovered[256];
+    cs_platform_info resolved = {0};
+    size_t discovered_count = 0;
+    const cs_platform_info *foo;
+
+    root = mkdtemp(template);
+    assert(root != NULL);
+    assert(snprintf(roms_dir, sizeof(roms_dir), "%s/Roms", root) > 0);
+    assert(snprintf(foo_dir, sizeof(foo_dir), "%s/Roms/Awesome System (FOO)", root) > 0);
+    assert(snprintf(foo_file, sizeof(foo_file), "%s/sample.rom", foo_dir) > 0);
+    assert(snprintf(emus_root, sizeof(emus_root), "%s/Emus", root) > 0);
+    assert(snprintf(emus_platform_dir, sizeof(emus_platform_dir), "%s/Emus/tg5040", root) > 0);
+    assert(snprintf(foo_pak, sizeof(foo_pak), "%s/FOO.pak", emus_platform_dir) > 0);
+
+    make_dir(roms_dir);
+    make_dir(foo_dir);
+    write_file(foo_file, "rom");
+    make_dir(emus_root);
+    make_dir(emus_platform_dir);
+    make_dir(foo_pak);
+
+    set_sdcard_root_realpath(root);
+    assert(cs_paths_init(&paths) == 0);
+    assert(cs_platform_discover(&paths,
+                                discovered,
+                                sizeof(discovered) / sizeof(discovered[0]),
+                                &discovered_count)
+           == 0);
+
+    foo = find_platform_entry(discovered, discovered_count, "FOO");
+    assert(foo != NULL);
+    assert(foo->is_custom == 1);
+    assert(strcmp(foo->name, "Awesome System") == 0);
+    assert(strcmp(foo->group, "Custom") == 0);
+    assert(strcmp(foo->icon, "FOO") == 0);
+    assert(strcmp(foo->primary_code, "FOO") == 0);
+    assert(strcmp(foo->rom_directory, "Awesome System (FOO)") == 0);
+
+    assert(cs_platform_resolve(&paths, "FOO", &resolved) == 0);
+    assert(resolved.is_custom == 1);
+    assert(strcmp(resolved.tag, "FOO") == 0);
+    assert(strcmp(resolved.rom_directory, "Awesome System (FOO)") == 0);
+
+    /* Remove the matching emulator pak — the custom platform should disappear from discovery. */
+    assert(rmdir(foo_pak) == 0);
+    assert(cs_platform_discover(&paths,
+                                discovered,
+                                sizeof(discovered) / sizeof(discovered[0]),
+                                &discovered_count)
+           == 0);
+    assert(find_platform_entry(discovered, discovered_count, "FOO") == NULL);
+    assert(cs_platform_resolve(&paths, "FOO", &resolved) == -1);
+
+    assert(rmdir(emus_platform_dir) == 0);
+    assert(rmdir(emus_root) == 0);
+    assert(remove(foo_file) == 0);
+    assert(rmdir(foo_dir) == 0);
+    assert(rmdir(roms_dir) == 0);
+    assert(rmdir(root) == 0);
+}
+
 static void test_ports_are_only_discovered_when_installed(void) {
     char template[] = "/tmp/cs-platforms-ports-XXXXXX";
     char *root;
@@ -395,6 +466,7 @@ int main(void) {
     test_alias_rom_directories_are_resolved();
     test_shortcut_directories_are_excluded_from_discovery();
     test_custom_rom_directories_are_not_exposed_in_library();
+    test_custom_rom_directories_are_exposed_when_emulator_installed();
     test_ports_are_only_discovered_when_installed();
     test_emulator_scan_checks_emus_and_system_paks();
     return 0;

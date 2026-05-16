@@ -3,6 +3,7 @@
 
 #include <dirent.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -645,6 +646,46 @@ static int cs_platform_scan_rom_dirs(const cs_paths *paths,
     return 0;
 }
 
+static int cs_platform_emulator_code_present(const char *code,
+                                             const char codes[][CS_PLATFORM_CODE_MAX],
+                                             size_t code_count) {
+    size_t i;
+
+    if (!code || !codes) {
+        return 0;
+    }
+    for (i = 0; i < code_count; ++i) {
+        if (cs_platform_codes_equal(code, codes[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int cs_platform_build_custom(const cs_discovered_rom_dir *dir, cs_platform_info *target) {
+    if (!dir || !target) {
+        return -1;
+    }
+    memset(target, 0, sizeof(*target));
+    if (cs_write_string(target->tag, sizeof(target->tag), dir->system_code) != 0
+        || cs_write_string(target->name, sizeof(target->name), dir->system_name) != 0
+        || cs_write_string(target->group, sizeof(target->group), "Custom") != 0
+        || cs_write_string(target->icon, sizeof(target->icon), dir->system_code) != 0
+        || cs_write_string(target->primary_code, sizeof(target->primary_code), dir->system_code) != 0
+        || cs_write_string(target->rom_directory, sizeof(target->rom_directory), dir->dir_name) != 0) {
+        return -1;
+    }
+    target->is_custom = 1;
+    return 0;
+}
+
+static int cs_platform_compare_by_name(const void *a, const void *b) {
+    const cs_platform_info *left = (const cs_platform_info *) a;
+    const cs_platform_info *right = (const cs_platform_info *) b;
+
+    return strcmp(left->name, right->name);
+}
+
 size_t cs_platform_count(void) {
     return sizeof(g_platforms) / sizeof(g_platforms[0]);
 }
@@ -679,7 +720,9 @@ int cs_platform_copy(const cs_platform_info *source, cs_platform_info *target) {
 int cs_platform_resolve(const cs_paths *paths, const char *tag, cs_platform_info *target) {
     const cs_platform_info *known;
     cs_discovered_rom_dir dirs[CS_DISCOVERED_PLATFORM_MAX];
+    char emulator_codes[CS_DISCOVERED_PLATFORM_MAX][CS_PLATFORM_CODE_MAX];
     size_t dir_count = 0;
+    size_t emulator_code_count = 0;
     int discovered_index;
 
     if (!tag || !target) {
@@ -713,9 +756,25 @@ int cs_platform_resolve(const cs_paths *paths, const char *tag, cs_platform_info
         return 0;
     }
 
+    /* Custom platform: only resolve when a matching emulator pak is installed. */
     discovered_index = cs_platform_find_discovered_by_code(dirs, dir_count, tag);
-    (void) discovered_index;
-    return -1;
+    if (discovered_index < 0) {
+        return -1;
+    }
+    if (cs_platform_collect_installed_emulators(paths,
+                                                emulator_codes,
+                                                CS_DISCOVERED_PLATFORM_MAX,
+                                                &emulator_code_count)
+        != 0) {
+        return -1;
+    }
+    if (!cs_platform_emulator_code_present(tag,
+                                           (const char (*)[CS_PLATFORM_CODE_MAX]) emulator_codes,
+                                           emulator_code_count)) {
+        return -1;
+    }
+
+    return cs_platform_build_custom(&dirs[discovered_index], target);
 }
 
 int cs_platform_discover(const cs_paths *paths,
@@ -723,8 +782,11 @@ int cs_platform_discover(const cs_paths *paths,
                          size_t capacity,
                          size_t *count_out) {
     cs_discovered_rom_dir dirs[CS_DISCOVERED_PLATFORM_MAX];
+    char emulator_codes[CS_DISCOVERED_PLATFORM_MAX][CS_PLATFORM_CODE_MAX];
     size_t dir_count = 0;
+    size_t emulator_code_count = 0;
     size_t count = 0;
+    size_t custom_start;
     size_t i;
 
     if (count_out) {
@@ -758,6 +820,43 @@ int cs_platform_discover(const cs_paths *paths,
         }
 
         count += 1;
+    }
+
+    /* Surface user-added rom directories whose TAG matches an installed emulator pak.
+       Gating on the installed emulator list avoids exposing incidental folders like
+       "Textures (GL)" while still picking up real systems the user added themselves
+       (e.g. "Nintendo 64 (N64)" once N64.pak ships in Emus/). */
+    custom_start = count;
+    if (cs_platform_collect_installed_emulators(paths,
+                                                emulator_codes,
+                                                CS_DISCOVERED_PLATFORM_MAX,
+                                                &emulator_code_count)
+        != 0) {
+        emulator_code_count = 0;
+    }
+
+    for (i = 0; i < dir_count && count < capacity; ++i) {
+        cs_platform_info entry;
+
+        if (cs_platform_known_index(dirs[i].system_code) >= 0) {
+            continue;
+        }
+        if (!cs_platform_emulator_code_present(dirs[i].system_code,
+                                               (const char (*)[CS_PLATFORM_CODE_MAX]) emulator_codes,
+                                               emulator_code_count)) {
+            continue;
+        }
+        if (cs_platform_build_custom(&dirs[i], &entry) != 0) {
+            return -1;
+        }
+        platforms[count++] = entry;
+    }
+
+    if (count > custom_start + 1) {
+        qsort(platforms + custom_start,
+              count - custom_start,
+              sizeof(platforms[0]),
+              cs_platform_compare_by_name);
     }
 
     if (count_out) {

@@ -21,9 +21,23 @@ import {
   replaceArt,
   revokeBrowser,
   searchFiles,
+  streamPlatforms,
   uploadFiles,
   UploadAbortedError,
 } from "./api";
+
+function makeNdjsonStream(chunks: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
+      controller.close();
+    },
+  });
+}
 
 class MockXhr {
   static instances: MockXhr[] = [];
@@ -182,10 +196,18 @@ describe("authenticated GET helpers", () => {
   });
 
   it("sends csrf headers for protected JSON fetches", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ platform: "mac", port: 8877, trustedCount: 0, groups: [], files: [], results: [] }),
-    });
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: async () => ({ platform: "mac", port: 8877, trustedCount: 0, groups: [], files: [], results: [] }),
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"type":"done"}\n'));
+            controller.close();
+          },
+        }),
+      }),
+    );
 
     vi.stubGlobal("fetch", fetchMock);
 
@@ -326,6 +348,111 @@ describe("authenticated GET helpers", () => {
       "/api/browser?scope=files&path=Screenshots&sort=modified&direction=desc",
       expect.objectContaining({ headers: { "X-CS-CSRF": "csrf-token" } }),
     );
+  });
+});
+
+describe("streamPlatforms", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("dispatches one onPlatform per NDJSON line and onDone at the end", async () => {
+    const lines = [
+      '{"type":"platform","group":"Nintendo","platform":{"tag":"GBA","name":"Game Boy Advance"}}\n',
+      '{"type":"platform","group":"Sega","platform":{"tag":"MD","name":"Sega Genesis"}}\n',
+      '{"type":"done"}\n',
+    ];
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: makeNdjsonStream(lines),
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const platforms: Array<{ group: string; tag: string }> = [];
+    let doneCalls = 0;
+
+    await streamPlatforms("csrf-token", {
+      onPlatform: (group, platform) => {
+        platforms.push({ group, tag: platform.tag });
+      },
+      onDone: () => {
+        doneCalls += 1;
+      },
+    });
+
+    expect(platforms).toEqual([
+      { group: "Nintendo", tag: "GBA" },
+      { group: "Sega", tag: "MD" },
+    ]);
+    expect(doneCalls).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/platforms",
+      expect.objectContaining({ headers: { "X-CS-CSRF": "csrf-token" } }),
+    );
+  });
+
+  it("handles NDJSON events split across chunk boundaries", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: makeNdjsonStream([
+        '{"type":"platform","group":"Nintendo","platform":{"tag":"G',
+        'BA"}}\n{"type":"do',
+        'ne"}\n',
+      ]),
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const platforms: string[] = [];
+    let doneCalls = 0;
+
+    await streamPlatforms("csrf-token", {
+      onPlatform: (_group, platform) => {
+        platforms.push(platform.tag);
+      },
+      onDone: () => {
+        doneCalls += 1;
+      },
+    });
+
+    expect(platforms).toEqual(["GBA"]);
+    expect(doneCalls).toBe(1);
+  });
+
+  it("rejects when the NDJSON stream ends before the done event", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: makeNdjsonStream([
+        '{"type":"platform","group":"Nintendo","platform":{"tag":"GBA"}}\n',
+      ]),
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(streamPlatforms("csrf-token", {})).rejects.toMatchObject({
+      message: "Platforms stream ended before completion",
+    });
+  });
+
+  it("aggregates groups in order for getPlatforms", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: makeNdjsonStream([
+        '{"type":"platform","group":"Nintendo","platform":{"tag":"GBA"}}\n',
+        '{"type":"platform","group":"Sega","platform":{"tag":"MD"}}\n',
+        '{"type":"platform","group":"Nintendo","platform":{"tag":"GBC"}}\n',
+        '{"type":"done"}\n',
+      ]),
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await getPlatforms("csrf-token");
+
+    expect(response.groups.map((group) => group.name)).toEqual(["Nintendo", "Sega"]);
+    expect(response.groups[0].platforms.map((p) => p.tag)).toEqual(["GBA", "GBC"]);
+    expect(response.groups[1].platforms.map((p) => p.tag)).toEqual(["MD"]);
   });
 });
 

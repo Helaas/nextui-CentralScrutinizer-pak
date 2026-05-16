@@ -12,7 +12,9 @@ test("preserves redesigned file workspace affordances while navigating folders",
   await expect(filesPath).toBeVisible();
   await expect(search).toBeVisible();
   await expect(page.getByRole("button", { name: "SD Card" })).toBeVisible();
-  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  // Bulk move/delete added selection checkboxes to the file workspace; the header checkbox is
+  // the affordance for selecting every visible item.
+  await expect(page.getByRole("checkbox", { name: "Select all visible items" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Open Roms" })).toBeVisible();
 
   await search.fill("Roms");

@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockApi = vi.hoisted(() => ({
   ApiError: class MockApiError extends Error {
@@ -31,6 +31,7 @@ const mockApi = vi.hoisted(() => ({
   getPlatforms: vi.fn(),
   getSaveStates: vi.fn(),
   getSession: vi.fn(),
+  streamPlatforms: vi.fn(),
   pairBrowser: vi.fn(),
   pairBrowserQr: vi.fn(),
   previewUploadBatched: vi.fn(),
@@ -432,7 +433,40 @@ function mockZipPicker(zipFile: File) {
   }) as typeof document.createElement);
 }
 
+function emitPlatformStream(
+  response: { groups?: Array<{ name: string; platforms: unknown[] }> },
+  handlers: {
+    onPlatform?: (group: string, platform: unknown) => void;
+    onDone?: () => void;
+  },
+) {
+  for (const group of response?.groups ?? []) {
+    for (const platform of group.platforms) {
+      handlers.onPlatform?.(group.name, platform);
+    }
+  }
+  handlers.onDone?.();
+}
+
 describe("Page", () => {
+  beforeEach(() => {
+    // streamPlatforms delegates to whatever getPlatforms() is mocked to return so existing
+    // tests can keep configuring fixtures via mockApi.getPlatforms.mockResolvedValue(...).
+    mockApi.streamPlatforms.mockImplementation(
+      async (
+        csrf: string,
+        handlers: {
+          onPlatform?: (group: string, platform: unknown) => void;
+          onDone?: () => void;
+        },
+      ) => {
+        const response = (await mockApi.getPlatforms(csrf)) as { groups?: Array<{ name: string; platforms: unknown[] }> };
+
+        emitPlatformStream(response, handlers);
+      },
+    );
+  });
+
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
@@ -1135,6 +1169,44 @@ describe("Page", () => {
         },
       ]),
     );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Refresh" })).toHaveProperty("disabled", false);
+    });
+  });
+
+  it("keeps the active platform browser visible while platform refresh is streaming", async () => {
+    let resolvePlatformRefresh: (() => void) | undefined;
+
+    window.history.replaceState(null, "", "/?view=browser&scope=roms&tag=GBA");
+    mockApi.getSession.mockResolvedValue(pairedSession());
+    mockApi.getBrowser.mockResolvedValue(romBrowserResponse());
+    mockApi.streamPlatforms
+      .mockImplementationOnce(async (_csrf: string, handlers: Parameters<typeof mockApi.streamPlatforms>[1]) => {
+        emitPlatformStream(platformGroups(), handlers);
+      })
+      .mockImplementationOnce(
+        async (_csrf: string, handlers: Parameters<typeof mockApi.streamPlatforms>[1]) =>
+          new Promise<void>((resolve) => {
+            resolvePlatformRefresh = () => {
+              emitPlatformStream(platformGroups(), handlers);
+              resolve();
+            };
+          }),
+      );
+
+    render(<Page />);
+
+    expect(await screen.findByRole("button", { name: "More actions for Pokemon Emerald.gba" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More actions for Pokemon Emerald.gba" })).toBeTruthy();
+      expect(screen.queryByText("Loading browser...")).toBeNull();
+      expect(screen.getByRole("button", { name: "Refresh" })).toHaveProperty("disabled", true);
+    });
+
+    resolvePlatformRefresh?.();
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Refresh" })).toHaveProperty("disabled", false);

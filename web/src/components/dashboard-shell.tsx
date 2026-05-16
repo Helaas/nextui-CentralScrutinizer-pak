@@ -2,9 +2,37 @@ import type { LibraryEmuFilter, PlatformGroup } from "../lib/types";
 import { createPlatformDisplayNames, flattenPlatformGroups } from "../lib/platform-display";
 import { PlatformGrid } from "./platform-grid";
 
+function DashboardSkeleton() {
+  return (
+    <div aria-busy="true" aria-live="polite" className="space-y-8" role="status">
+      <span className="sr-only">Loading platforms...</span>
+      {[0, 1].map((groupIndex) => (
+        <section key={groupIndex}>
+          <div className="mb-3 h-3 w-32 animate-pulse rounded bg-[var(--panel)]" />
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+            {[0, 1, 2].map((cardIndex) => (
+              <div
+                key={cardIndex}
+                className="flex w-full animate-pulse items-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-5 py-5"
+              >
+                <div className="h-12 w-12 shrink-0 rounded bg-[var(--panel-alt)]" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-3 w-2/3 rounded bg-[var(--panel-alt)]" />
+                  <div className="h-2.5 w-1/2 rounded bg-[var(--panel-alt)]" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function DashboardShell({
   emuFilter,
   groups,
+  isLoading = false,
   onChangeEmuFilter,
   onSelectPlatform,
   onToggleShowEmpty,
@@ -12,6 +40,7 @@ export function DashboardShell({
 }: {
   emuFilter: LibraryEmuFilter;
   groups: PlatformGroup[];
+  isLoading?: boolean;
   onChangeEmuFilter: (value: LibraryEmuFilter) => void;
   onSelectPlatform: (tag: string) => void;
   onToggleShowEmpty: (value: boolean) => void;
@@ -92,7 +121,18 @@ export function DashboardShell({
           </div>
         </section>
       ) : null}
-      <PlatformGrid groups={groups} onSelect={onSelectPlatform} />
+      {isLoading && groups.length === 0 ? (
+        <DashboardSkeleton />
+      ) : (
+        <>
+          <PlatformGrid groups={groups} onSelect={onSelectPlatform} />
+          {isLoading ? (
+            <p className="text-center text-sm italic text-[var(--muted)]" role="status">
+              Loading more platforms...
+            </p>
+          ) : null}
+        </>
+      )}
       <footer className="border-t border-[var(--border)] pt-6 text-center text-xs text-[var(--muted)]/70">
         Platform icons from the{" "}
         <a

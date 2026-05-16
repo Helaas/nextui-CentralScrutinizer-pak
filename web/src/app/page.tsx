@@ -22,8 +22,8 @@ import {
   beginUploadFilesBatched,
   createFolder,
   deleteItem,
-  getPlatforms,
   getSession,
+  streamPlatforms,
   pairBrowser,
   pairBrowserQr,
   previewUploadBatched,
@@ -234,6 +234,8 @@ export default function Page() {
     typeof window === "undefined" ? "installed" : readLibraryEmuFilter(window.location.search),
   );
   const [platformGroups, setPlatformGroups] = useState<PlatformGroup[]>([]);
+  const [isLoadingPlatforms, setIsLoadingPlatforms] = useState(false);
+  const platformsLoadGenerationRef = useRef(0);
   const [fileSearchResults, setFileSearchResults] = useState<FileSearchResult[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pairError, setPairError] = useState<string | null>(null);
@@ -322,16 +324,52 @@ export default function Page() {
     }
   }
 
-  async function loadPlatforms(currentCsrf = session?.csrf): Promise<PlatformGroup[]> {
+  async function loadPlatforms(currentCsrf = session?.csrf): Promise<void> {
     if (!currentCsrf) {
       setPlatformGroups([]);
-      return [];
+      setIsLoadingPlatforms(false);
+      return;
     }
 
-    const response = await getPlatforms(currentCsrf);
+    platformsLoadGenerationRef.current += 1;
+    const myGeneration = platformsLoadGenerationRef.current;
+    const nextGroups: PlatformGroup[] = [];
+    const replaceIncrementally = platformGroups.length === 0;
 
-    setPlatformGroups(response.groups);
-    return response.groups;
+    setIsLoadingPlatforms(true);
+    if (replaceIncrementally) {
+      setPlatformGroups([]);
+    }
+    try {
+      await streamPlatforms(currentCsrf, {
+        onPlatform: (groupName, platform) => {
+          if (platformsLoadGenerationRef.current !== myGeneration) {
+            return;
+          }
+          const groupIndex = nextGroups.findIndex((group) => group.name === groupName);
+
+          if (groupIndex >= 0) {
+            nextGroups[groupIndex] = {
+              ...nextGroups[groupIndex],
+              platforms: [...nextGroups[groupIndex].platforms, platform],
+            };
+          } else {
+            nextGroups.push({ name: groupName, platforms: [platform] });
+          }
+
+          if (replaceIncrementally) {
+            setPlatformGroups(nextGroups.map((group) => ({ ...group, platforms: [...group.platforms] })));
+          }
+        },
+      });
+      if (platformsLoadGenerationRef.current === myGeneration && !replaceIncrementally) {
+        setPlatformGroups(nextGroups);
+      }
+    } finally {
+      if (platformsLoadGenerationRef.current === myGeneration) {
+        setIsLoadingPlatforms(false);
+      }
+    }
   }
 
   async function refreshSessionState(): Promise<SessionResponse> {
@@ -1608,6 +1646,7 @@ export default function Page() {
       <DashboardShell
         emuFilter={libraryEmuFilter}
         groups={visiblePlatformGroups}
+        isLoading={isLoadingPlatforms}
         onChangeEmuFilter={updateLibraryEmuFilter}
         onSelectPlatform={(tag) => {
           navigate({ view: "platform", destination: "library", tag });

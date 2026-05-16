@@ -2,6 +2,7 @@
 .worktrees/
 build/
 node_modules/
+test-results/
 .DS_Store
 web/.DS_Store
 fixtures/mock_sdcard/.userdata/shared/CentralScrutinizer/trusted-clients.json

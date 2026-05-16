@@ -132,6 +132,23 @@ static int cs_stream_begin_json_response(struct mg_connection *conn) {
                : 0;
 }
 
+static int cs_stream_begin_ndjson_response(struct mg_connection *conn) {
+    if (!conn) {
+        return -1;
+    }
+
+    return mg_printf(conn,
+                     "HTTP/1.1 200 OK\r\n"
+                     "Content-Type: application/x-ndjson\r\n"
+                     CS_SERVER_SECURITY_HEADERS_HTTP
+                     "Cache-Control: no-store\r\n"
+                     "Transfer-Encoding: chunked\r\n"
+                     "\r\n")
+                   <= 0
+               ? -1
+               : 0;
+}
+
 static int cs_stream_literal(struct mg_connection *conn, const char *literal) {
     size_t len;
 
@@ -325,6 +342,8 @@ static int cs_count_files_recursive(const char *path, int allow_hidden, int skip
     while ((entry = readdir(dir)) != NULL) {
         char child[CS_PATH_MAX];
         struct stat st;
+        int is_dir;
+        int is_reg;
 
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
@@ -338,15 +357,35 @@ static int cs_count_files_recursive(const char *path, int allow_hidden, int skip
         if (snprintf(child, sizeof(child), "%s/%s", path, entry->d_name) < 0) {
             continue;
         }
-        if (lstat(child, &st) != 0 || S_ISLNK(st.st_mode)) {
+
+        /* Skip lstat() when d_type is reliable. Device filesystems (ext4/F2FS) report it,
+           which roughly halves syscalls per scan on large libraries. Symlinks and DT_UNKNOWN
+           still fall through to the lstat path. */
+        is_dir = 0;
+        is_reg = 0;
+#ifdef DT_REG
+        if (entry->d_type == DT_REG) {
+            is_reg = 1;
+        } else if (entry->d_type == DT_DIR) {
+            is_dir = 1;
+        } else if (entry->d_type != DT_UNKNOWN && entry->d_type != DT_LNK) {
             continue;
+        } else
+#endif
+        {
+            if (lstat(child, &st) != 0 || S_ISLNK(st.st_mode)) {
+                continue;
+            }
+            is_dir = S_ISDIR(st.st_mode);
+            is_reg = S_ISREG(st.st_mode);
         }
-        if (S_ISDIR(st.st_mode)) {
+
+        if (is_dir) {
             if (cs_platform_is_shortcut_directory(entry->d_name, child)) {
                 continue;
             }
             total += cs_count_files_recursive(child, allow_hidden, skip_media_dir);
-        } else if (S_ISREG(st.st_mode)) {
+        } else if (is_reg) {
             total += 1;
         }
     }
@@ -359,8 +398,7 @@ static int cs_stream_platform_object(struct mg_connection *conn,
                                      const cs_paths *paths,
                                      const cs_platform_info *platform,
                                      const char emulator_codes[][CS_PLATFORM_CODE_MAX],
-                                     size_t emulator_code_count,
-                                     int *first_platform) {
+                                     size_t emulator_code_count) {
     char rom_root[CS_PATH_MAX];
     char save_root[CS_PATH_MAX];
     char bios_root[CS_PATH_MAX];
@@ -382,7 +420,7 @@ static int cs_stream_platform_object(struct mg_connection *conn,
     int supports_overlays;
     int supports_cheats;
 
-    if (!conn || !paths || !platform || !first_platform) {
+    if (!conn || !paths || !platform) {
         return -1;
     }
     supports_roms = cs_platform_supports_resource(platform, "roms");
@@ -423,9 +461,6 @@ static int cs_stream_platform_object(struct mg_connection *conn,
         cheat_count = cs_count_files_recursive(cheats_root, 0, 0);
     }
 
-    if (!*first_platform && cs_stream_literal(conn, ",") != 0) {
-        return -1;
-    }
     if (cs_stream_literal(conn, "{\"tag\":\"") != 0
         || cs_stream_escaped_string(conn, platform->tag) != 0
         || cs_stream_literal(conn, "\",\"name\":\"") != 0
@@ -480,7 +515,24 @@ static int cs_stream_platform_object(struct mg_connection *conn,
         return -1;
     }
 
-    *first_platform = 0;
+    return 0;
+}
+
+static int cs_stream_platform_event(struct mg_connection *conn,
+                                    const cs_paths *paths,
+                                    const cs_platform_info *platform,
+                                    const char emulator_codes[][CS_PLATFORM_CODE_MAX],
+                                    size_t emulator_code_count) {
+    if (!conn || !platform) {
+        return -1;
+    }
+    if (cs_stream_literal(conn, "{\"type\":\"platform\",\"group\":\"") != 0
+        || cs_stream_escaped_string(conn, platform->group) != 0
+        || cs_stream_literal(conn, "\",\"platform\":") != 0
+        || cs_stream_platform_object(conn, paths, platform, emulator_codes, emulator_code_count) != 0
+        || cs_stream_literal(conn, "}\n") != 0) {
+        return -1;
+    }
     return 0;
 }
 
@@ -491,9 +543,6 @@ int cs_route_platforms_handler(struct mg_connection *conn, void *cbdata) {
     size_t platform_count = 0;
     size_t emulator_code_count = 0;
     size_t i;
-    const char *current_group = NULL;
-    int first_group = 1;
-    int first_platform = 1;
     int guard_status;
 
     if (!cs_method_is(conn, "GET")) {
@@ -503,61 +552,34 @@ int cs_route_platforms_handler(struct mg_connection *conn, void *cbdata) {
     if (guard_status != 0) {
         return guard_status;
     }
-    if (cs_stream_begin_json_response(conn) != 0) {
+
+    if (cs_platform_discover(&app->paths, platforms, sizeof(platforms) / sizeof(platforms[0]), &platform_count) != 0
+        || cs_platform_collect_installed_emulators(&app->paths,
+                                                   emulator_codes,
+                                                   sizeof(emulator_codes) / sizeof(emulator_codes[0]),
+                                                   &emulator_code_count)
+               != 0) {
+        return cs_write_json(conn, 500, "Internal Server Error", "{\"error\":\"discover_failed\"}");
+    }
+
+    if (cs_stream_begin_ndjson_response(conn) != 0) {
         return 1;
     }
-    if (cs_stream_literal(conn, "{\"groups\":[") != 0) {
-        goto stream_fail;
-    }
 
-    if (cs_platform_discover(&app->paths, platforms, sizeof(platforms) / sizeof(platforms[0]), &platform_count) != 0) {
-        goto stream_fail;
-    }
-    if (cs_platform_collect_installed_emulators(&app->paths,
-                                                emulator_codes,
-                                                sizeof(emulator_codes) / sizeof(emulator_codes[0]),
-                                                &emulator_code_count)
-        != 0) {
-        goto stream_fail;
-    }
-
+    /* Emit one NDJSON line per platform, flushed as the counts finish so the browser
+       can render cards incrementally instead of waiting for all platforms to scan. */
     for (i = 0; i < platform_count; ++i) {
-        const cs_platform_info *platform = &platforms[i];
-
-        if (!current_group || strcmp(current_group, platform->group) != 0) {
-            if (current_group) {
-                if (cs_stream_literal(conn, "]}") != 0) {
-                    goto stream_fail;
-                }
-            }
-            if (!first_group && cs_stream_literal(conn, ",") != 0) {
-                goto stream_fail;
-            }
-            if (cs_stream_literal(conn, "{\"name\":\"") != 0
-                || cs_stream_escaped_string(conn, platform->group) != 0
-                || cs_stream_literal(conn, "\",\"platforms\":[") != 0) {
-                goto stream_fail;
-            }
-            current_group = platform->group;
-            first_group = 0;
-            first_platform = 1;
-        }
-
-        if (cs_stream_platform_object(conn,
-                                      &app->paths,
-                                      platform,
-                                      (const char (*)[CS_PLATFORM_CODE_MAX]) emulator_codes,
-                                      emulator_code_count,
-                                      &first_platform)
+        if (cs_stream_platform_event(conn,
+                                     &app->paths,
+                                     &platforms[i],
+                                     (const char (*)[CS_PLATFORM_CODE_MAX]) emulator_codes,
+                                     emulator_code_count)
             != 0) {
             goto stream_fail;
         }
     }
 
-    if (current_group && cs_stream_literal(conn, "]}") != 0) {
-        goto stream_fail;
-    }
-    if (cs_stream_literal(conn, "]}") != 0 || mg_send_chunk(conn, "", 0) < 0) {
+    if (cs_stream_literal(conn, "{\"type\":\"done\"}\n") != 0 || mg_send_chunk(conn, "", 0) < 0) {
         goto stream_fail;
     }
 

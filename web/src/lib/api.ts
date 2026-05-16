@@ -6,6 +6,8 @@ import type {
   LogsResponse,
   MacDotfilesResponse,
   MutationRequest,
+  PlatformGroup,
+  PlatformSummary,
   PlatformsResponse,
   ReplaceArtRequest,
   RenameRequest,
@@ -204,12 +206,103 @@ export async function revokeBrowser(csrf: string): Promise<void> {
   }
 }
 
-export async function getPlatforms(csrf: string): Promise<PlatformsResponse> {
+export type PlatformStreamEvent =
+  | { type: "platform"; group: string; platform: PlatformSummary }
+  | { type: "done" };
+
+export type PlatformStreamHandlers = {
+  onPlatform?: (group: string, platform: PlatformSummary) => void;
+  onDone?: () => void;
+  signal?: AbortSignal;
+};
+
+function dispatchPlatformEvent(line: string, handlers: PlatformStreamHandlers): boolean {
+  const trimmed = line.trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  let event: PlatformStreamEvent;
+
+  try {
+    event = JSON.parse(trimmed) as PlatformStreamEvent;
+  } catch {
+    throw new ApiError("Malformed platforms stream", 500);
+  }
+
+  if (event.type === "platform") {
+    handlers.onPlatform?.(event.group, event.platform);
+  } else if (event.type === "done") {
+    handlers.onDone?.();
+    return true;
+  }
+  return false;
+}
+
+export async function streamPlatforms(csrf: string, handlers: PlatformStreamHandlers): Promise<void> {
   const response = await fetch("/api/platforms", {
     headers: csrfHeaders(csrf),
+    signal: handlers.signal,
   });
 
-  return expectJson<PlatformsResponse>(response, "Platforms lookup failed");
+  if (!response.ok) {
+    throw new ApiError("Platforms lookup failed", response.status, await readErrorCode(response));
+  }
+  if (!response.body) {
+    throw new ApiError("Platforms lookup failed", 0);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let doneSeen = false;
+
+  for (;;) {
+    const { value, done } = await reader.read();
+
+    if (value) {
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIndex = buffer.indexOf("\n");
+
+      while (newlineIndex >= 0) {
+        doneSeen = dispatchPlatformEvent(buffer.slice(0, newlineIndex), handlers) || doneSeen;
+        buffer = buffer.slice(newlineIndex + 1);
+        newlineIndex = buffer.indexOf("\n");
+      }
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  if (buffer.length > 0) {
+    doneSeen = dispatchPlatformEvent(buffer, handlers) || doneSeen;
+  }
+  if (!doneSeen) {
+    throw new ApiError("Platforms stream ended before completion", 500);
+  }
+}
+
+export async function getPlatforms(csrf: string): Promise<PlatformsResponse> {
+  const groups: PlatformGroup[] = [];
+  const groupIndex = new Map<string, number>();
+
+  await streamPlatforms(csrf, {
+    onPlatform: (groupName, platform) => {
+      let idx = groupIndex.get(groupName);
+
+      if (idx === undefined) {
+        idx = groups.length;
+        groupIndex.set(groupName, idx);
+        groups.push({ name: groupName, platforms: [] });
+      }
+      groups[idx].platforms.push(platform);
+    },
+  });
+
+  return { groups };
 }
 
 export type BrowserRequestOptions = {
