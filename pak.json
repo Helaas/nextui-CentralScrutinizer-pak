@@ -1,12 +1,13 @@
 {
   "name": "The Central Scrutinizer",
-  "version": "v0.1.6",
+  "version": "v0.2.0",
   "type": "TOOL",
   "description": "Browser-based device manager for NextUI handhelds, letting users manage their devices from web or mobile browsers with library browsing, file tools, collections, screenshots, logs, artwork replacement, and optional background mode.",
   "author": "helaas",
   "release_filename": "Central.Scrutinizer.pakz",
   "repo_url": "https://github.com/Helaas/nextui-CentralScrutinizer-pak",
   "changelog": {
+    "v0.2.0": "Fixes incorrect colors with NextUI's RGBA theme format.",
     "v0.1.6": "Custom ROM folders now appear in the library when the matching emulator pak is installed. Platforms page stream-loads for snappier startup, with incremental card rendering, a loading skeleton, and a fallback icon for unknown platforms.",
     "v0.1.5": "Add server-backed Name/Size/Modified sorting for paginated browser tables with accessible headers. Thanks @ericreinsmidt.",
     "v0.1.4": "Add folder and ZIP/.pakz uploads with extraction modes, conflict previews, and safer partial-upload handling.",
