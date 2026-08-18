@@ -31,7 +31,7 @@ typedef struct cs_keep_awake_buffer {
 
 static int cs_keep_awake_is_supported_platform(const char *platform_name) {
     return platform_name && (strcmp(platform_name, "tg5040") == 0 || strcmp(platform_name, "tg5050") == 0
-                             || strcmp(platform_name, "my355") == 0);
+                             || strcmp(platform_name, "my355") == 0 || strcmp(platform_name, "h700") == 0);
 }
 
 const char *cs_keep_awake_platform_name(void) {

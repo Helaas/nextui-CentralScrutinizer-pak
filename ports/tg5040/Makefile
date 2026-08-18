@@ -3,16 +3,22 @@ SHELL := /bin/bash
 CROSS_COMPILE ?= aarch64-nextui-linux-gnu-
 CC := $(CROSS_COMPILE)gcc
 STRIP := $(CROSS_COMPILE)strip
+PLATFORM_DEFINE ?= PLATFORM_TG5040
 SRC := $(shell find /workspace/src -name '*.c' -print | sort) /workspace/third_party/qrcodegen.c /workspace/third_party/civetweb/src/civetweb.c
-HDR := $(shell find /workspace/include -name '*.h' -print | sort) /workspace/third_party/civetweb/include/civetweb.h
+HDR := $(shell find /workspace/include -name '*.h' -print | sort) \
+	/workspace/third_party/civetweb/include/civetweb.h \
+	/workspace/third_party/apostrophe/include/apostrophe.h \
+	/workspace/third_party/apostrophe/include/apostrophe_widgets.h \
+	/workspace/ports/tg5040/Makefile
 INCLUDES := -I/workspace/include -I/workspace/third_party/civetweb/include -I/workspace/third_party/apostrophe/include
 PKG_CONFIG := pkg-config
+comma := ,
 SDL_CFLAGS := $(shell $(PKG_CONFIG) --cflags sdl2)
-SDL_LDFLAGS := $(shell $(PKG_CONFIG) --libs sdl2) -lSDL2_ttf -lSDL2_image
+SDL_LDFLAGS := $(filter-out -Wl$(comma)-rpath$(comma)%,$(shell $(PKG_CONFIG) --libs sdl2)) -lSDL2_ttf -lSDL2_image
 
 CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Wno-unused-parameter \
 	-mcpu=cortex-a53 -mtune=cortex-a53 \
-	-DPLATFORM_TG5040 -DNO_SSL -DCS_ENABLE_APOSTROPHE_UI -DUSE_WEBSOCKET -DHAVE_POLL \
+	-D$(PLATFORM_DEFINE) -DNO_SSL -DCS_ENABLE_APOSTROPHE_UI -DUSE_WEBSOCKET -DHAVE_POLL \
 	-ffunction-sections -fdata-sections \
 	$(INCLUDES) $(SDL_CFLAGS)
 

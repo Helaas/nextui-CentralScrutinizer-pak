@@ -24,6 +24,7 @@ Current release builds target these NextUI device platforms:
 - `tg5040`
 - `tg5050`
 - `my355`
+- `h700`
 
 ## Requirements
 

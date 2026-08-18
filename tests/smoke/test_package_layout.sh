@@ -24,7 +24,7 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-for platform in tg5040 tg5050 my355; do
+for platform in tg5040 tg5050 my355 h700; do
     pak_dir="build/staging/Tools/$platform/Central Scrutinizer.pak"
     test -f "$pak_dir/central-scrutinizer"
     test -f "$pak_dir/launch.sh"

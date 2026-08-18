@@ -160,6 +160,8 @@ int main(void) {
     assert(sdcard_root != NULL);
 
     assert(setenv("SDCARD_PATH", sdcard_root, 1) == 0);
+    assert(setenv("CS_PLATFORM_NAME_OVERRIDE", "h700", 1) == 0);
+    assert(cs_keep_awake_current_platform_uses_settings_override() == 1);
     assert(setenv("CS_PLATFORM_NAME_OVERRIDE", "my355", 1) == 0);
     assert(cs_paths_init(&paths) == 0);
     make_settings_path(&paths, settings_path, sizeof(settings_path));
