@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 APP_NAME := central-scrutinizer
 PAK_DIR_NAME := Central Scrutinizer.pak
-RELEASE_FILENAME := Central.Scrutinizer.pakz
+RELEASE_FILENAME := Central.Scrutinizer.pak.zip
 LOCAL_RELEASE_FILENAME := Central.Scrutinizer-local.pakz
 BUILD_DIR := build
 DIST_DIR := $(BUILD_DIR)/release
@@ -138,14 +138,10 @@ package-my355: my355 web-build
 	@$(MAKE) do-package PLATFORM=my355 BIN_SRC=$(BUILD_DIR)/my355/$(APP_NAME)
 
 package-universal: universal web-build
-	@set -e; for platform in tg5040 tg5050 my355 h700; do \
-		$(MAKE) do-package PLATFORM=$$platform BIN_SRC=$(BUILD_DIR)/universal/$(APP_NAME); \
-	done
-	@set -e; for platform in tg5040 tg5050 my355 h700; do \
-		cmp -s "$(BUILD_DIR)/universal/$(APP_NAME)" \
-			"$(BUILD_DIR)/$$platform/$(PAK_DIR_NAME)/$(APP_NAME)"; \
-	done
-	@echo "Verified one identical device binary in all four package trees."
+	@$(MAKE) do-package PLATFORM=universal BIN_SRC=$(BUILD_DIR)/universal/$(APP_NAME)
+	@cmp -s "$(BUILD_DIR)/universal/$(APP_NAME)" \
+		"$(BUILD_DIR)/universal/$(PAK_DIR_NAME)/$(APP_NAME)"
+	@echo "Verified the packaged universal device binary."
 
 do-package:
 	@if [ -z "$(PLATFORM)" ] || [ -z "$(BIN_SRC)" ]; then \
@@ -164,14 +160,11 @@ do-package:
 	}
 
 package: package-universal
-	@rm -rf $(STAGING_DIR)
 	@mkdir -p $(DIST_DIR)/all
-	@for platform in tg5040 tg5050 my355 h700; do \
-		mkdir -p "$(STAGING_DIR)/Tools/$$platform"; \
-		cp -a "$(BUILD_DIR)/$$platform/$(PAK_DIR_NAME)" "$(STAGING_DIR)/Tools/$$platform/"; \
-	done
-	@rm -f "$(DIST_DIR)/all/$(RELEASE_FILENAME)" "$(DIST_DIR)/all/Central Scrutinizer.pakz"
-	@cd "$(STAGING_DIR)" && zip -9 -r "$(CURDIR)/$(DIST_DIR)/all/$(RELEASE_FILENAME)" . -x '.*'
+	@rm -f "$(DIST_DIR)/all/$(RELEASE_FILENAME)" "$(DIST_DIR)/all/Central.Scrutinizer.pakz"
+	@cd "$(BUILD_DIR)/universal/$(PAK_DIR_NAME)" && \
+		zip -9 -r "$(CURDIR)/$(DIST_DIR)/all/$(RELEASE_FILENAME)" . -x '.*'
+	@unzip -Z1 "$(DIST_DIR)/all/$(RELEASE_FILENAME)" | grep -qx "$(APP_NAME)"
 
 package-local: mac web-build
 	@rm -rf $(STAGING_DIR)
@@ -242,7 +235,7 @@ deploy-platform:
 	PAK_DIR="$$PAK_ROOT/$(PAK_DIR_NAME)"; \
 	echo "Deploying $(PAK_DIR_NAME) to $$PAK_DIR..."; \
 	$$ADB_CMD shell "rm -rf '$$PAK_DIR' && mkdir -p '$$PAK_ROOT'"; \
-	$$ADB_CMD push "$(BUILD_DIR)/$(PLATFORM)/$(PAK_DIR_NAME)" "$$PAK_ROOT/"; \
+	$$ADB_CMD push "$(BUILD_DIR)/universal/$(PAK_DIR_NAME)" "$$PAK_ROOT/"; \
 	echo "Deploy complete."
 
 PREVIEW_PORT ?= 8877
