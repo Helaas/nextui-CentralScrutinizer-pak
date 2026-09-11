@@ -24,6 +24,7 @@ Current release builds target these NextUI device platforms:
 - `tg5040`
 - `tg5050`
 - `my355`
+- `h700`
 
 ## Requirements
 
@@ -36,12 +37,12 @@ No cloud account or external service is required. The dashboard is served direct
 
 ## Installation
 
-Install `Central Scrutinizer.pakz` the same way you install other NextUI paks.
+Install `Central.Scrutinizer.pak.zip` through Pak Store or extract its contents into `Tools/<platform>/Central Scrutinizer.pak`.
 
 Typical options:
 
 1. Install it from your preferred pak source/store if provided there.
-2. Or copy the unpacked pak into your device's `Tools/<platform>/Central Scrutinizer.pak` directory.
+2. Or extract the archive contents into your device's `Tools/<platform>/Central Scrutinizer.pak` directory.
 
 After installation, launch **The Central Scrutinizer** from the Tools menu on the handheld.
 
@@ -101,7 +102,7 @@ Folder uploads are available in ROM workspaces and the File Browser.
 - **Upload ZIP** accepts both `.zip` and `.pakz` archives. Central Scrutinizer extracts the archive in your browser before upload, skips common macOS archive artifacts such as `__MACOSX/`, `.DS_Store`, and `._*` files, and then lets you choose one of three extraction modes:
   1. **Extract here** strips a single shared archive root when one exists and uploads the contents into the current folder.
   2. **Extract into folder** uses the same root-stripping behavior, then wraps the extracted contents in a folder named after the archive.
-  3. **Preserve full archive path** keeps the archive paths exactly as stored, which is the safest option for deployment archives such as `Central Scrutinizer.pakz` that intentionally include top-level paths like `Tools/...`.
+  3. **Preserve full archive path** keeps the archive paths exactly as stored, which is the safest option for `.pakz` deployment archives that intentionally include top-level paths like `Tools/...`.
 - Before any extracted files are uploaded, Central Scrutinizer runs a conflict preview. Existing folders are merged automatically. Existing files are only replaced when you explicitly enable **Overwrite existing files** in the extract dialog.
 - File-versus-folder conflicts are always blocked instead of deleting the existing destination tree. The dialog shows a short conflict summary and preview list before you commit the extract.
 - If an upload is cancelled or a later file batch fails, any folders and earlier files that already uploaded remain in place, and the browser refreshes with the upload result.

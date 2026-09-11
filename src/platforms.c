@@ -390,7 +390,8 @@ static int cs_platform_find_discovered_by_code(const cs_discovered_rom_dir *dirs
 static int cs_platform_build_is_handheld(void) {
     const char *platform = cs_build_info_platform_name();
 
-    return platform && (strcmp(platform, "tg5040") == 0 || strcmp(platform, "tg5050") == 0 || strcmp(platform, "my355") == 0);
+    return platform && (strcmp(platform, "tg5040") == 0 || strcmp(platform, "tg5050") == 0 ||
+                        strcmp(platform, "my355") == 0 || strcmp(platform, "h700") == 0);
 }
 
 static int cs_platform_ports_directory_exists(const cs_paths *paths) {

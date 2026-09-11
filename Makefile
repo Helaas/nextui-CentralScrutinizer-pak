@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 APP_NAME := central-scrutinizer
 PAK_DIR_NAME := Central Scrutinizer.pak
-RELEASE_FILENAME := Central.Scrutinizer.pakz
+RELEASE_FILENAME := Central.Scrutinizer.pak.zip
 LOCAL_RELEASE_FILENAME := Central.Scrutinizer-local.pakz
 BUILD_DIR := build
 DIST_DIR := $(BUILD_DIR)/release
@@ -12,6 +12,7 @@ APOSTROPHE_BRANCH := main
 TG5040_TOOLCHAIN := ghcr.io/loveretro/tg5040-toolchain:latest
 TG5050_TOOLCHAIN := ghcr.io/loveretro/tg5050-toolchain:latest
 MY355_TOOLCHAIN := ghcr.io/loveretro/my355-toolchain:latest
+UNIVERSAL_TOOLCHAIN := ghcr.io/loveretro/tg5040-toolchain@sha256:f131c6af64029a8723d0ce8d3c2682642f5f091b04714f6beedda9bec18477ab
 ADB ?= adb
 SDL_AVAILABLE := $(shell pkg-config --exists sdl2 SDL2_ttf SDL2_image 2>/dev/null && echo 1 || echo 0)
 ifeq ($(SDL_AVAILABLE),1)
@@ -30,7 +31,7 @@ SRC_APP := src/main.c $(SRC_COMMON) $(SRC_SERVER) $(SRC_VENDOR)
 COMMON_INCLUDES := -Iinclude -Ithird_party/civetweb/include -I$(APOSTROPHE_DIR)/include -DUSE_WEBSOCKET
 WEB_DEPS_STAMP := web/node_modules/next/package.json
 
-.PHONY: all mac tg5040 tg5050 my355 package package-local package-tg5040 package-tg5050 package-my355 do-package deploy deploy-platform clean test-native test-native-all test-smoke test-all web-install web-test web-build preview preview-clear-port update-apostrophe
+.PHONY: all mac universal tg5040 tg5050 my355 package package-local package-universal package-tg5040 package-tg5050 package-my355 do-package deploy deploy-platform clean test-native test-native-all test-smoke test-all web-install web-test web-build preview preview-clear-port update-apostrophe
 
 $(APOSTROPHE_DIR)/include/apostrophe.h:
 	git submodule update --init --checkout $(APOSTROPHE_DIR)
@@ -53,7 +54,16 @@ mac:
 	cc -std=gnu11 -O0 -g -DPLATFORM_MAC -DNO_SSL -DHAVE_POLL $(COMMON_INCLUDES) $(MAC_UI_CFLAGS) \
 		-o $(BUILD_DIR)/mac/$(APP_NAME) $(SRC_APP) $(MAC_UI_LDFLAGS) -lm -lpthread
 
-all: tg5040 tg5050 my355
+all: universal
+
+universal:
+	@mkdir -p $(BUILD_DIR)/universal
+	docker run --rm \
+		-v "$(CURDIR)":/workspace \
+		$(UNIVERSAL_TOOLCHAIN) \
+		make -C /workspace -f ports/tg5040/Makefile \
+			PLATFORM_DEFINE=PLATFORM_NEXTUI \
+			BUILD_DIR=/workspace/$(BUILD_DIR)/universal
 
 tg5040:
 	@mkdir -p $(BUILD_DIR)/tg5040
@@ -96,7 +106,7 @@ test-native-all:
 	done
 
 test-smoke:
-	@for script in tests/smoke/test_*.sh; do \
+	@set -e; for script in tests/smoke/test_*.sh; do \
 		[ "$$(basename "$$script")" = "helpers.sh" ] || bash "$$script"; \
 	done
 
@@ -127,6 +137,12 @@ package-tg5050: tg5050 web-build
 package-my355: my355 web-build
 	@$(MAKE) do-package PLATFORM=my355 BIN_SRC=$(BUILD_DIR)/my355/$(APP_NAME)
 
+package-universal: universal web-build
+	@$(MAKE) do-package PLATFORM=universal BIN_SRC=$(BUILD_DIR)/universal/$(APP_NAME)
+	@cmp -s "$(BUILD_DIR)/universal/$(APP_NAME)" \
+		"$(BUILD_DIR)/universal/$(PAK_DIR_NAME)/$(APP_NAME)"
+	@echo "Verified the packaged universal device binary."
+
 do-package:
 	@if [ -z "$(PLATFORM)" ] || [ -z "$(BIN_SRC)" ]; then \
 		echo "Error: do-package requires PLATFORM and BIN_SRC."; \
@@ -143,20 +159,17 @@ do-package:
 		exit 1; \
 	}
 
-package: package-tg5040 package-tg5050 package-my355
-	@rm -rf $(STAGING_DIR)
+package: package-universal
 	@mkdir -p $(DIST_DIR)/all
-	@for platform in tg5040 tg5050 my355; do \
-		mkdir -p "$(STAGING_DIR)/Tools/$$platform"; \
-		cp -a "$(BUILD_DIR)/$$platform/$(PAK_DIR_NAME)" "$(STAGING_DIR)/Tools/$$platform/"; \
-	done
-	@rm -f "$(DIST_DIR)/all/$(RELEASE_FILENAME)" "$(DIST_DIR)/all/Central Scrutinizer.pakz"
-	@cd "$(STAGING_DIR)" && zip -9 -r "$(CURDIR)/$(DIST_DIR)/all/$(RELEASE_FILENAME)" . -x '.*'
+	@rm -f "$(DIST_DIR)/all/$(RELEASE_FILENAME)" "$(DIST_DIR)/all/Central.Scrutinizer.pakz"
+	@cd "$(BUILD_DIR)/universal/$(PAK_DIR_NAME)" && \
+		zip -9 -r "$(CURDIR)/$(DIST_DIR)/all/$(RELEASE_FILENAME)" . -x '.*'
+	@bash tests/package/test_universal_layout.sh "$(DIST_DIR)/all/$(RELEASE_FILENAME)" "$(BUILD_DIR)/universal/$(PAK_DIR_NAME)"
 
 package-local: mac web-build
 	@rm -rf $(STAGING_DIR)
 	@mkdir -p $(DIST_DIR)/local
-	@for platform in tg5040 tg5050 my355; do \
+	@for platform in tg5040 tg5050 my355 h700; do \
 		pak_dir="$(STAGING_DIR)/Tools/$$platform/$(PAK_DIR_NAME)"; \
 		mkdir -p "$$pak_dir/resources/web"; \
 		cp "$(BUILD_DIR)/mac/$(APP_NAME)" "$$pak_dir/$(APP_NAME)"; \
@@ -189,6 +202,7 @@ deploy:
 		echo; \
 		uname -a 2>/dev/null' 2>/dev/null | tr '\000' '\n' | tr -d '\r'); \
 	case "$$FINGERPRINT" in \
+		*sun50iw9*|*H700*|*h700*) PLATFORM=h700 ;; \
 		*rk3566*|*miyoo-355*) PLATFORM=my355 ;; \
 		*allwinner,a523*|*sun55iw3*) PLATFORM=tg5050 ;; \
 		*allwinner,a133*|*sun50iw*) PLATFORM=tg5040 ;; \
@@ -215,13 +229,13 @@ deploy-platform:
 		echo "Error: deploy-platform requires PLATFORM and SERIAL."; \
 		exit 1; \
 	fi
-	@$(MAKE) package-$(PLATFORM)
-	@ADB_CMD="$(ADB) -s $(SERIAL)"; \
+	@$(MAKE) package-universal
+	@set -e; ADB_CMD="$(ADB) -s $(SERIAL)"; \
 	PAK_ROOT="/mnt/SDCARD/Tools/$(PLATFORM)"; \
 	PAK_DIR="$$PAK_ROOT/$(PAK_DIR_NAME)"; \
 	echo "Deploying $(PAK_DIR_NAME) to $$PAK_DIR..."; \
 	$$ADB_CMD shell "rm -rf '$$PAK_DIR' && mkdir -p '$$PAK_ROOT'"; \
-	$$ADB_CMD push "$(BUILD_DIR)/$(PLATFORM)/$(PAK_DIR_NAME)" "$$PAK_ROOT/"; \
+	$$ADB_CMD push "$(BUILD_DIR)/universal/$(PAK_DIR_NAME)" "$$PAK_ROOT/"; \
 	echo "Deploy complete."
 
 PREVIEW_PORT ?= 8877

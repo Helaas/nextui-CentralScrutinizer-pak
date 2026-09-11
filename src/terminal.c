@@ -560,7 +560,9 @@ static int cs_terminal_escape_sequence_is_safe(const char *data, size_t len, siz
             if ((ch >= '0' && ch <= '9') || ch == ';' || ch == '?' || ch == ':') {
                 continue;
             }
-            if (ch == 'A' || ch == 'B' || ch == 'C' || ch == 'D' || ch == 'F' || ch == 'H' || ch == '~') {
+            /* R terminates xterm's cursor-position reply to the shell's CSI 6 n query. */
+            if (ch == 'A' || ch == 'B' || ch == 'C' || ch == 'D' || ch == 'F' || ch == 'H' || ch == 'R'
+                || ch == '~') {
                 *sequence_len = i + 1;
                 return 1;
             }
@@ -626,6 +628,13 @@ static int cs_terminal_write_input(cs_terminal_session *session, const char *dat
     free(filtered);
     return 0;
 }
+
+#if defined(CS_TESTING)
+int cs_terminal_write_input_for_test(int fd, const char *data, size_t len) {
+    cs_terminal_session session = {.pty_fd = fd};
+    return cs_terminal_write_input(&session, data, len);
+}
+#endif
 
 static cs_terminal_session *cs_terminal_find_ticket_locked(cs_terminal_manager *manager, const char *ticket) {
     cs_terminal_session *session;

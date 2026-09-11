@@ -1,0 +1,74 @@
+name: Build
+
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      version:
+        description: Version string read from pak.json
+        value: ${{ jobs.universal.outputs.version }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  universal:
+    name: Universal pak (Central.Scrutinizer.pak.zip)
+    # Match the pinned toolchain's linux/arm64 variant used on Apple Silicon.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Validate release metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          version="$(jq -er '.version | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' pak.json)"
+          jq -e '.release_filename == "Central.Scrutinizer.pak.zip"' pak.json
+          jq -e --arg v "$version" '.changelog[$v] | type == "string" and length > 0' pak.json
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Test native code and web components
+        run: |
+          make test-native-all
+          make web-install
+          npm --prefix web test -- --run
+
+      - name: Build and verify package
+        run: make package
+
+      - name: Summarize package
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          {
+            echo "### Central Scrutinizer $VERSION"
+            echo '```'
+            unzip -Z1 build/release/all/Central.Scrutinizer.pak.zip | sort
+            echo
+            sha256sum build/universal/central-scrutinizer build/release/all/Central.Scrutinizer.pak.zip
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Central.Scrutinizer.pak.zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Central-Scrutinizer-pak-zip
+          path: build/release/all/Central.Scrutinizer.pak.zip
+          if-no-files-found: error
