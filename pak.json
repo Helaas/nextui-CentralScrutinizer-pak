@@ -1,12 +1,13 @@
 {
   "name": "Central Scrutinizer",
-  "version": "v0.2.0",
+  "version": "v0.3.0",
   "type": "TOOL",
   "description": "Browser-based device manager for NextUI handhelds, letting users manage their devices from web or mobile browsers with library browsing, file tools, collections, screenshots, logs, artwork replacement, and optional background mode.",
   "author": "helaas",
   "release_filename": "Central.Scrutinizer.pak.zip",
   "repo_url": "https://github.com/Helaas/nextui-CentralScrutinizer-pak",
   "changelog": {
+    "v0.3.0": "Adds H700 support and one universal build for all supported NextUI handhelds, packaged as Central.Scrutinizer.pak.zip for Pak Store. Updates Apostrophe to v1.2.0 for improved H700 input and face-button handling. Fixes stray cursor-position text in the browser terminal. Adds automated GitHub releases and stronger package and deployment checks.",
     "v0.2.0": "Fixes incorrect colors with NextUI's RGBA theme format.",
     "v0.1.6": "Custom ROM folders now appear in the library when the matching emulator pak is installed. Platforms page stream-loads for snappier startup, with incremental card rendering, a loading skeleton, and a fallback icon for unknown platforms.",
     "v0.1.5": "Add server-backed Name/Size/Modified sorting for paginated browser tables with accessible headers. Thanks @ericreinsmidt.",
