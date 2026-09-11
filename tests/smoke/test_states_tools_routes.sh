@@ -155,8 +155,10 @@ for i in $(seq 1 600); do
     printf 'appledouble' > "$SDCARD_ROOT/Roms/truncate/._bulk$(printf '%03d' "$i")"
 done
 
-DOTFILES_TRUNCATED="$(curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/tools/mac-dotfiles')"
-printf '%s' "$DOTFILES_TRUNCATED" | grep -Fq '"count":602'
-printf '%s' "$DOTFILES_TRUNCATED" | grep -Fq '"truncated":true'
+# The streamed route now returns more than the old 512-entry limit.
+DOTFILES_LARGE="$(curl -sf -b "$COOKIE_JAR" -H "X-CS-CSRF: $CSRF_TOKEN" 'http://127.0.0.1:8877/api/tools/mac-dotfiles')"
+grep -Fq '"count":602' <<< "$DOTFILES_LARGE"
+grep -Fq '"truncated":false' <<< "$DOTFILES_LARGE"
+grep -Fq '"Roms/truncate/._bulk600"' <<< "$DOTFILES_LARGE"
 
 echo "PASS states/tools smoke"

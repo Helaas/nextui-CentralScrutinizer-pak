@@ -9,6 +9,8 @@ prepare_mock_sdcard() {
 
     mkdir -p "$sdcard_root"
     cp -R "$CS_SMOKE_REPO_ROOT/fixtures/mock_sdcard/." "$sdcard_root/"
+    # Finder can add these to the source fixture; tests create their own metadata.
+    find "$sdcard_root" -type f -name .DS_Store -delete
     mkdir -p "$(dirname "$trust_store_path")"
     printf '{"clients":[]}\n' > "$trust_store_path"
 }

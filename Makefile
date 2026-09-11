@@ -106,7 +106,7 @@ test-native-all:
 	done
 
 test-smoke:
-	@for script in tests/smoke/test_*.sh; do \
+	@set -e; for script in tests/smoke/test_*.sh; do \
 		[ "$$(basename "$$script")" = "helpers.sh" ] || bash "$$script"; \
 	done
 
@@ -164,7 +164,7 @@ package: package-universal
 	@rm -f "$(DIST_DIR)/all/$(RELEASE_FILENAME)" "$(DIST_DIR)/all/Central.Scrutinizer.pakz"
 	@cd "$(BUILD_DIR)/universal/$(PAK_DIR_NAME)" && \
 		zip -9 -r "$(CURDIR)/$(DIST_DIR)/all/$(RELEASE_FILENAME)" . -x '.*'
-	@unzip -Z1 "$(DIST_DIR)/all/$(RELEASE_FILENAME)" | grep -qx "$(APP_NAME)"
+	@bash tests/package/test_universal_layout.sh "$(DIST_DIR)/all/$(RELEASE_FILENAME)" "$(BUILD_DIR)/universal/$(PAK_DIR_NAME)"
 
 package-local: mac web-build
 	@rm -rf $(STAGING_DIR)
@@ -230,7 +230,7 @@ deploy-platform:
 		exit 1; \
 	fi
 	@$(MAKE) package-universal
-	@ADB_CMD="$(ADB) -s $(SERIAL)"; \
+	@set -e; ADB_CMD="$(ADB) -s $(SERIAL)"; \
 	PAK_ROOT="/mnt/SDCARD/Tools/$(PLATFORM)"; \
 	PAK_DIR="$$PAK_ROOT/$(PAK_DIR_NAME)"; \
 	echo "Deploying $(PAK_DIR_NAME) to $$PAK_DIR..."; \
